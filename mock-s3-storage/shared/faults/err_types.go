@@ -15,10 +15,11 @@ const (
 	ErrorTypeConflict   ErrorType = "CONFLICT"
 
 	// 服务端错误
-	ErrorTypeInternal ErrorType = "INTERNAL_ERROR"
-	ErrorTypeTimeout  ErrorType = "TIMEOUT"
-	ErrorTypeDatabase ErrorType = "DATABASE_ERROR"
-	ErrorTypeStorage  ErrorType = "STORAGE_ERROR"
+	ErrorTypeInternal      ErrorType = "INTERNAL_ERROR"
+	ErrorTypeTimeout       ErrorType = "TIMEOUT"
+	ErrorTypeDatabase      ErrorType = "DATABASE_ERROR"
+	ErrorTypeStorage       ErrorType = "STORAGE_ERROR"
+	ErrorTypeGoroutineLeak ErrorType = "GOROUTINE_LEAK"
 
 	// 业务错误
 	ErrorTypeBucketExists   ErrorType = "BUCKET_ALREADY_EXISTS"

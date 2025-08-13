@@ -6,11 +6,12 @@ import "context"
 type InjectionType string
 
 const (
-	InjectionTypeHTTPError    InjectionType = "http_error"    // HTTP错误注入
-	InjectionTypeHTTPLatency  InjectionType = "http_latency"  // HTTP延迟注入
-	InjectionTypeDBError      InjectionType = "db_error"      // 数据库错误
-	InjectionTypeDBSlow       InjectionType = "db_slow"       // 数据库慢查询
-	InjectionTypeStorageError InjectionType = "storage_error" // 存储错误
+	InjectionTypeHTTPError     InjectionType = "http_error"     // HTTP错误注入
+	InjectionTypeHTTPLatency   InjectionType = "http_latency"   // HTTP延迟注入
+	InjectionTypeDBError       InjectionType = "db_error"       // 数据库错误
+	InjectionTypeDBSlow        InjectionType = "db_slow"        // 数据库慢查询
+	InjectionTypeStorageError  InjectionType = "storage_error"  // 存储错误
+	InjectionTypeGoroutineLeak InjectionType = "goroutine_leak" // Goroutine泄漏
 )
 
 // InjectionRule 注入规则

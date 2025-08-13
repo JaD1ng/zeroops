@@ -1,8 +1,9 @@
-module file-storage-service
+module storage-service
 
-go 1.21
+go 1.24.5
 
-require (
-	github.com/google/uuid v1.4.0
-	github.com/lib/pq v1.10.9
-)
+require shared v0.0.0
+
+require github.com/google/uuid v1.4.0 // indirect
+
+replace shared => ../../shared
