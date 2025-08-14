@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
+	"shared/config"
+	"shared/telemetry/metrics"
 	"storage-service/internal/handler"
 	"storage-service/internal/impl"
-
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const (
@@ -70,6 +70,19 @@ func main() {
 	faultService := impl.NewFaultServiceImpl()
 	faultHandler := handler.NewFaultHandler(faultService)
 
+	// 创建指标收集器
+	metricsConfig := config.MetricsConfig{
+		ServiceName: "mock-storage",
+		ServiceVer:  "1.0.0",
+		Namespace:   "storage",
+		Enabled:     true,
+		Port:        9090,
+		Path:        "/metrics",
+	}
+
+	metricsCollector := metrics.NewMetrics(metricsConfig)
+	defer metricsCollector.Close()
+
 	// 创建路由处理器
 	router := handler.NewRouter(fileHandler, faultHandler)
 
@@ -106,7 +119,7 @@ func main() {
 
 	go func() {
 		log.Printf("Prometheus metrics endpoint running at :%s/metrics\n", metricsPort)
-		http.Handle("/metrics", promhttp.Handler())
+		http.Handle("/metrics", metricsCollector.Handler())
 		if err := http.ListenAndServe(":"+metricsPort, nil); err != nil {
 			log.Fatalf("Prometheus metrics 服务启动失败: %v", err)
 		}
