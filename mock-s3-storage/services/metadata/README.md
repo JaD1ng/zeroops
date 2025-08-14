@@ -54,36 +54,6 @@ type MetadataEntry struct {
 | 模式匹配 | ✅ GetMetadataByPattern | ✅ GetMetadataByPattern | ✅ |
 | 导入导出 | ✅ Import/ExportMetadata | ✅ Import/ExportMetadata | ✅ |
 | 统计信息 | ✅ GetStats | ✅ GetStats | ✅ |
-
-## 使用示例
-
-### 上层服务保存元数据
-```bash
-curl -X POST http://localhost:8080/metadata \
-  -H "Content-Type: application/json" \
-  -d '{
-    "id": "uuid-123",
-    "key": "mybucket/myfile.txt",
-    "size": 1024,
-    "content_type": "text/plain",
-    "md5_hash": "abc123...",
-    "storage_nodes": ["node1", "node2"]
-  }'
-```
-
-### 获取对象元数据
-```bash
-curl "http://localhost:8080/metadata/get?key=mybucket/myfile.txt"
-```
-
-### 按bucket列出对象
-```bash
-curl "http://localhost:8080/buckets?bucket=mybucket"
-```
-
-### 搜索元数据
-```bash
-curl "http://localhost:8080/metadata/search?q=txt&limit=10"
 ```
 
 ## 配置
@@ -105,11 +75,3 @@ database:
 支持内置故障注入：
 - 内存泄漏模拟
 - 随机错误注入（保存5%，获取2%失败率）
-
-## 架构简化
-
-相比之前的复杂设计，新架构：
-- 减少了约60%的代码量
-- 移除了不必要的Bucket独立管理
-- 对齐了原始服务的API设计
-- 保持了微服务的核心优势
