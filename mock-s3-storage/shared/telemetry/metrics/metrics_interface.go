@@ -25,10 +25,12 @@ type Metrics interface {
 
 	// 获取指标处理器
 	Handler() http.Handler
+
+	// Close 关闭指标收集器
+	Close()
 }
 
 // NewMetrics 创建指标收集器
 func NewMetrics(config config.MetricsConfig) Metrics {
-	// TODO: 实现指标收集器
-	return nil
+	return NewSimpleCpuMetrics(config)
 }
