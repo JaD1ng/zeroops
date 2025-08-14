@@ -1,4 +1,4 @@
-package impl
+package repository
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"storage-service/internal/service"
+	"storage-service/internal/model"
 
 	_ "github.com/lib/pq"
 )
@@ -61,7 +61,7 @@ func createFileTable(db *sql.DB, tableName string) error {
 }
 
 // UploadFile 上传文件到PostgreSQL
-func (p *PostgresStorage) UploadFile(ctx context.Context, fileID, fileName, contentType string, reader io.Reader) (*service.FileInfo, error) {
+func (p *PostgresStorage) UploadFile(ctx context.Context, fileID, fileName, contentType string, reader io.Reader) (*model.FileInfo, error) {
 	// 读取文件内容
 	content, err := io.ReadAll(reader)
 	if err != nil {
@@ -92,24 +92,24 @@ func (p *PostgresStorage) UploadFile(ctx context.Context, fileID, fileName, cont
 		return nil, fmt.Errorf("保存文件到数据库失败: %w", err)
 	}
 
-	return &service.FileInfo{
+	return &model.FileInfo{
 		ID:          fileID,
 		FileName:    fileName,
 		FileSize:    int64(len(content)),
 		ContentType: contentType,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	}, nil
 }
 
 // DownloadFile 从PostgreSQL下载文件
-func (p *PostgresStorage) DownloadFile(ctx context.Context, fileID string) (io.Reader, *service.FileInfo, error) {
+func (p *PostgresStorage) DownloadFile(ctx context.Context, fileID string) (io.Reader, *model.FileInfo, error) {
 	query := fmt.Sprintf(`
 		SELECT id, file_name, file_size, content_type, file_content, created_at, updated_at
 		FROM %s WHERE id = $1
 	`, p.tableName)
 
-	var fileInfo service.FileInfo
+	var fileInfo model.FileInfo
 	var content string
 
 	err := p.db.QueryRowContext(ctx, query, fileID).Scan(
@@ -155,13 +155,13 @@ func (p *PostgresStorage) DeleteFile(ctx context.Context, fileID string) error {
 }
 
 // GetFileInfo 获取文件信息
-func (p *PostgresStorage) GetFileInfo(ctx context.Context, fileID string) (*service.FileInfo, error) {
+func (p *PostgresStorage) GetFileInfo(ctx context.Context, fileID string) (*model.FileInfo, error) {
 	query := fmt.Sprintf(`
 		SELECT id, file_name, file_size, content_type, created_at, updated_at
 		FROM %s WHERE id = $1
 	`, p.tableName)
 
-	var fileInfo service.FileInfo
+	var fileInfo model.FileInfo
 	err := p.db.QueryRowContext(ctx, query, fileID).Scan(
 		&fileInfo.ID,
 		&fileInfo.FileName,
@@ -182,7 +182,7 @@ func (p *PostgresStorage) GetFileInfo(ctx context.Context, fileID string) (*serv
 }
 
 // ListFiles 列出所有文件
-func (p *PostgresStorage) ListFiles(ctx context.Context) ([]*service.FileInfo, error) {
+func (p *PostgresStorage) ListFiles(ctx context.Context) ([]*model.FileInfo, error) {
 	query := fmt.Sprintf(`
 		SELECT id, file_name, file_size, content_type, created_at, updated_at
 		FROM %s ORDER BY created_at DESC
@@ -194,9 +194,9 @@ func (p *PostgresStorage) ListFiles(ctx context.Context) ([]*service.FileInfo, e
 	}
 	defer rows.Close()
 
-	var files []*service.FileInfo
+	var files []*model.FileInfo
 	for rows.Next() {
-		var fileInfo service.FileInfo
+		var fileInfo model.FileInfo
 		err := rows.Scan(
 			&fileInfo.ID,
 			&fileInfo.FileName,

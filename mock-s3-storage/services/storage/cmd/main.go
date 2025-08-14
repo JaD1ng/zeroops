@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -10,54 +9,30 @@ import (
 	"syscall"
 	"time"
 
-	"shared/config"
+	sharedconfig "shared/config"
 	"shared/telemetry/metrics"
+	"storage-service/internal/config"
 	"storage-service/internal/handler"
-	"storage-service/internal/impl"
+	"storage-service/internal/repository"
 )
 
 const (
-	// 服务配置
-	defaultPort = "8080"
-	metricsPort = "1080"
-	defaultHost = "127.0.0.1"
-
-	// PostgreSQL配置
-	dbHost     = "localhost"
-	dbPort     = "5432"
-	dbUser     = "postgres"
-	dbPassword = "123456"
-	dbName     = "mock"
-	dbSSLMode  = "disable"
-
-	// 表名配置
-	defaultTableName = "files"
+	// 优雅关闭超时时间
+	gracefulShutdownTimeout = 30 * time.Second
 )
 
 func main() {
-	// 获取端口号（从环境变量或使用默认值）
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = defaultPort
+	// 加载配置
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("加载配置失败: %v", err)
 	}
-
-	// 获取表名（从环境变量或使用默认值）
-	tableName := os.Getenv("TABLE_NAME")
-	if tableName == "" {
-		tableName = defaultTableName
-	}
-
-	// 构建数据库连接字符串
-	connectionString := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		dbHost, dbPort, dbUser, dbPassword, dbName, dbSSLMode,
-	)
 
 	// 创建存储工厂
-	factory := impl.NewStorageFactory()
+	factory := repository.NewStorageFactory()
 
 	// 创建PostgreSQL存储服务
-	storageService, err := factory.CreatePostgresStorage(connectionString, tableName)
+	storageService, err := factory.CreatePostgresStorage(cfg.GetConnectionString(), cfg.Database.TableName)
 	if err != nil {
 		log.Fatalf("初始化存储服务失败: %v", err)
 	}
@@ -67,17 +42,17 @@ func main() {
 	fileHandler := handler.NewFileHandler(storageService)
 
 	// 创建故障处理器
-	faultService := impl.NewFaultServiceImpl()
+	faultService := repository.NewFaultServiceImpl()
 	faultHandler := handler.NewFaultHandler(faultService)
 
 	// 创建指标收集器
-	metricsConfig := config.MetricsConfig{
-		ServiceName: "mock-storage",
-		ServiceVer:  "1.0.0",
-		Namespace:   "storage",
-		Enabled:     true,
-		Port:        9090,
-		Path:        "/metrics",
+	metricsConfig := sharedconfig.MetricsConfig{
+		ServiceName: cfg.Metrics.ServiceName,
+		ServiceVer:  cfg.Metrics.ServiceVer,
+		Namespace:   cfg.Metrics.Namespace,
+		Enabled:     cfg.Metrics.Enabled,
+		Port:        cfg.Metrics.Port,
+		Path:        cfg.Metrics.Path,
 	}
 
 	metricsCollector := metrics.NewMetrics(metricsConfig)
@@ -88,17 +63,17 @@ func main() {
 
 	// 创建HTTP服务器
 	server := &http.Server{
-		Addr:         fmt.Sprintf("%s:%s", defaultHost, port),
+		Addr:         cfg.GetServerAddr(),
 		Handler:      router,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
+		IdleTimeout:  cfg.Server.IdleTimeout,
 	}
 
 	// 启动服务器
 	go func() {
-		log.Printf("文件存储服务启动在 http://%s:%s", defaultHost, port)
-		log.Printf("数据库表名: %s", tableName)
+		log.Printf("文件存储服务启动在 %s", cfg.GetServerAddr())
+		log.Printf("数据库表名: %s", cfg.Database.TableName)
 		log.Printf("API端点:")
 		log.Printf("  - 健康检查: GET /api/health")
 		log.Printf("  - 文件上传: POST /api/files/upload")
@@ -118,9 +93,9 @@ func main() {
 	}()
 
 	go func() {
-		log.Printf("Prometheus metrics endpoint running at :%s/metrics\n", metricsPort)
+		log.Printf("Prometheus metrics endpoint running at %s%s\n", cfg.GetMetricsAddr(), cfg.Metrics.Path)
 		http.Handle("/metrics", metricsCollector.Handler())
-		if err := http.ListenAndServe(":"+metricsPort, nil); err != nil {
+		if err := http.ListenAndServe(cfg.GetMetricsAddr(), nil); err != nil {
 			log.Fatalf("Prometheus metrics 服务启动失败: %v", err)
 		}
 	}()
@@ -133,7 +108,7 @@ func main() {
 	log.Println("正在关闭服务器...")
 
 	// 优雅关闭服务器
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), gracefulShutdownTimeout)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {

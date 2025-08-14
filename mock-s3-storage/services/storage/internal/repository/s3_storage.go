@@ -1,4 +1,4 @@
-package impl
+package repository
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	"storage-service/internal/service"
+	"storage-service/internal/model"
 )
 
 // S3Storage S3存储实现（示例）
@@ -33,7 +33,7 @@ func NewS3Storage(bucketName, region string) (*S3Storage, error) {
 }
 
 // UploadFile 上传文件到S3
-func (s *S3Storage) UploadFile(ctx context.Context, fileID, fileName, contentType string, reader io.Reader) (*service.FileInfo, error) {
+func (s *S3Storage) UploadFile(ctx context.Context, fileID, fileName, contentType string, reader io.Reader) (*model.FileInfo, error) {
 	// 这里实现S3上传逻辑
 	// 示例代码：
 	// _, err := s.s3Client.PutObjectWithContext(ctx, &s3.PutObjectInput{
@@ -44,8 +44,8 @@ func (s *S3Storage) UploadFile(ctx context.Context, fileID, fileName, contentTyp
 	// })
 
 	// 暂时返回模拟数据
-	now := time.Now().Format("2006-01-02 15:04:05")
-	return &service.FileInfo{
+	now := time.Now()
+	return &model.FileInfo{
 		ID:          fileID,
 		FileName:    fileName,
 		FileSize:    0, // 需要从S3获取实际大小
@@ -56,7 +56,7 @@ func (s *S3Storage) UploadFile(ctx context.Context, fileID, fileName, contentTyp
 }
 
 // DownloadFile 从S3下载文件
-func (s *S3Storage) DownloadFile(ctx context.Context, fileID string) (io.Reader, *service.FileInfo, error) {
+func (s *S3Storage) DownloadFile(ctx context.Context, fileID string) (io.Reader, *model.FileInfo, error) {
 	// 这里实现S3下载逻辑
 	// 示例代码：
 	// result, err := s.s3Client.GetObjectWithContext(ctx, &s3.GetObjectInput{
@@ -80,7 +80,7 @@ func (s *S3Storage) DeleteFile(ctx context.Context, fileID string) error {
 }
 
 // GetFileInfo 获取S3文件信息
-func (s *S3Storage) GetFileInfo(ctx context.Context, fileID string) (*service.FileInfo, error) {
+func (s *S3Storage) GetFileInfo(ctx context.Context, fileID string) (*model.FileInfo, error) {
 	// 这里实现S3文件信息获取逻辑
 	// 示例代码：
 	// result, err := s.s3Client.HeadObjectWithContext(ctx, &s3.HeadObjectInput{
@@ -92,7 +92,7 @@ func (s *S3Storage) GetFileInfo(ctx context.Context, fileID string) (*service.Fi
 }
 
 // ListFiles 列出S3中的所有文件
-func (s *S3Storage) ListFiles(ctx context.Context) ([]*service.FileInfo, error) {
+func (s *S3Storage) ListFiles(ctx context.Context) ([]*model.FileInfo, error) {
 	// 这里实现S3文件列表获取逻辑
 	// 示例代码：
 	// result, err := s.s3Client.ListObjectsV2WithContext(ctx, &s3.ListObjectsV2Input{

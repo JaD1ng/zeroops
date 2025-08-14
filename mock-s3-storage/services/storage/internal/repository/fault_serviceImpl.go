@@ -1,4 +1,4 @@
-package impl
+package repository
 
 import (
 	"shared/faults"
@@ -16,7 +16,7 @@ func NewFaultServiceImpl() service.FaultService {
 	m := faults.NewFaultManager()
 	// 注册所有故障实例
 	m.Register(memory.NewMemLeakFault(1*1024*1024, 15000*time.Millisecond))
-	m.Register(cpu.NewCpuSpikeFault(80, 4, 100*time.Millisecond)) // CPU使用率80%，4个工作goroutine，100ms间隔
+	m.Register(cpu.NewCpuSpikeFault(90, 4, 100*time.Millisecond)) // CPU使用率90%，4个工作goroutine，100ms间隔
 	return &faultServiceImpl{
 		manager: m,
 	}

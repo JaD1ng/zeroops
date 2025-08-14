@@ -235,19 +235,28 @@ const (
 ```
 storage/
 ├── cmd/
-│   └── main.go              # 服务启动入口
+│   └── main.go              # 应用程序入口点
 ├── internal/
-│   ├── handler/
-│   │   ├── file_handler.go  # 文件处理逻辑
+│   ├── config/              # 配置管理
+│   │   └── config.go        # 配置结构和加载逻辑
+│   ├── handler/             # HTTP处理器
+│   │   ├── file_handler.go  # 文件操作处理器
+│   │   ├── fault_handler.go # 故障注入处理器
 │   │   └── router.go        # 路由配置
-│   ├── service/
-│   │   └── storage_service.go    # 存储服务接口
-│   └── impl/
-│       ├── postgres_storage.go   # PostgreSQL存储实现
-│       ├── s3_storage.go         # S3存储实现（示例）
-│       └── factory.go            # 存储工厂
+│   ├── model/               # 数据模型
+│   │   └── file.go          # 文件相关数据结构
+│   ├── repository/          # 数据访问层
+│   │   ├── factory.go       # 存储工厂
+│   │   ├── postgres_storage.go # PostgreSQL存储实现
+│   │   ├── s3_storage.go    # S3存储实现（示例）
+│   │   └── fault_serviceImpl.go # 故障服务实现
+│   └── service/             # 服务接口
+│       ├── storage_service.go # 存储服务接口
+│       └── fault_service.go # 故障服务接口
+├── config.yaml              # 配置文件
 ├── go.mod                   # Go模块文件
-└── README.md               # 项目说明文档
+├── go.sum                   # Go依赖校验文件
+└── README.md               # 项目文档
 ```
 
 ## 架构设计
@@ -270,10 +279,12 @@ type StorageService interface {
 ### 实现架构
 
 - **service包**: 只包含接口定义，遵循接口分离原则
-- **impl包**: 包含具体的存储实现
+- **repository包**: 包含具体的数据访问实现
   - `PostgresStorage`: PostgreSQL存储实现
   - `S3Storage`: S3存储实现（示例）
   - `StorageFactory`: 存储工厂，用于创建不同的存储实例
+- **model包**: 包含数据模型定义
+- **config包**: 包含配置管理逻辑
 
 ### 扩展性
 
