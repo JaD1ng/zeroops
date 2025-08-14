@@ -1,0 +1,64 @@
+# Metadata Service Configuration
+service:
+  name: "metadata-service"
+  version: "1.0.0"
+  environment: "development"
+  region: "us-west-2"
+  shutdown_timeout: "30s"
+
+http:
+  name: "metadata-service"
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: "30s"
+  write_timeout: "30s"
+  idle_timeout: "60s"
+  graceful_shutdown: "30s"
+
+# 使用内存数据库进行开发测试
+database:
+  type: "sqlite"
+  host: ""
+  port: 0
+  database: "metadata.db"
+  username: ""
+  password: ""
+  max_open_conns: 25
+  max_idle_conns: 25
+  conn_max_lifetime: "5m"
+
+# 可选的Redis缓存
+cache:
+  type: "memory"  # 使用内存缓存替代Redis
+  host: "localhost"
+  port: 6379
+  database: ""
+  username: ""
+  password: ""
+
+metrics:
+  service_name: "metadata-service"
+  service_version: "1.0.0"
+  namespace: "mock_s3"
+  labels: {}
+  enabled: true
+  port: 9090
+  path: "/metrics"
+
+logging:
+  level: "info"
+  format: "json"
+  output: ["stdout"]
+
+tracing:
+  enabled: true
+  service_name: "metadata-service"
+  sampling_rate: 1.0
+
+# 简化部署，可选的服务发现
+discovery:
+  address: "localhost:8500"
+  scheme: "http"
+  datacenter: "dc1"
+  token: ""
+  timeout: "10s"
