@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"path/filepath"
+	"shared/middleware"
 	"strings"
 	"time"
 
@@ -30,6 +32,10 @@ func NewFileHandler(storageService service.StorageService) *FileHandler {
 func (h *FileHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	// 设置响应头
 	w.Header().Set("Content-Type", "application/json")
+
+	// 获取request_id（测试用）
+	requestID := middleware.GetRequestID(r.Context())
+	log.Printf("处理文件上传请求，request_id: %s", requestID)
 
 	// 检查请求方法
 	if r.Method != http.MethodPost {

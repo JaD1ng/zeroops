@@ -10,6 +10,7 @@ import (
 	"time"
 
 	sharedconfig "shared/config"
+	"shared/middleware"
 	"shared/telemetry/metrics"
 	"storage-service/internal/config"
 	"storage-service/internal/handler"
@@ -64,7 +65,7 @@ func main() {
 	// 创建HTTP服务器
 	server := &http.Server{
 		Addr:         cfg.GetServerAddr(),
-		Handler:      router,
+		Handler:      middleware.RequestIDMiddleware(router), // 添加RequestID
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,
