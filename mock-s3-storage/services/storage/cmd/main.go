@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -9,9 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	sharedconfig "shared/config"
 	"shared/middleware"
-	"shared/telemetry/metrics"
+	"shared/telemetry/opentelemetry"
 	"storage-service/internal/config"
 	"storage-service/internal/handler"
 	"storage-service/internal/repository"
@@ -29,6 +29,27 @@ func main() {
 		log.Fatalf("加载配置失败: %v", err)
 	}
 
+	// 初始化OpenTelemetry
+	otelConfig := opentelemetry.Config{
+		ServiceName:    cfg.OpenTelemetry.ServiceName,
+		ServiceVersion: cfg.OpenTelemetry.ServiceVersion,
+		Environment:    cfg.OpenTelemetry.Environment,
+		MetricsPort:    cfg.OpenTelemetry.MetricsPort,
+		MetricsPath:    cfg.OpenTelemetry.MetricsPath,
+		EnableTracing:  cfg.OpenTelemetry.EnableTracing, // 从配置文件读取
+	}
+
+	telemetryProvider, err := opentelemetry.InitOpenTelemetry(otelConfig)
+	if err != nil {
+		log.Fatalf("初始化OpenTelemetry失败: %v", err)
+	}
+
+	// 获取指标处理器
+	metricsHandler := telemetryProvider.GetMetricsHandler()
+
+	// 获取指标收集器（用于业务指标）
+	metricsCollector := telemetryProvider.GetMetricsCollector()
+
 	// 创建存储工厂
 	factory := repository.NewStorageFactory()
 
@@ -40,41 +61,27 @@ func main() {
 	defer storageService.Close()
 
 	// 创建文件处理器
-	fileHandler := handler.NewFileHandler(storageService)
+	fileHandler := handler.NewFileHandler(storageService, metricsCollector)
 
 	// 创建故障处理器
 	faultService := repository.NewFaultServiceImpl()
 	faultHandler := handler.NewFaultHandler(faultService)
 
-	// 创建指标收集器
-	metricsConfig := sharedconfig.MetricsConfig{
-		ServiceName: cfg.Metrics.ServiceName,
-		ServiceVer:  cfg.Metrics.ServiceVer,
-		Namespace:   cfg.Metrics.Namespace,
-		Enabled:     cfg.Metrics.Enabled,
-		Port:        cfg.Metrics.Port,
-		Path:        cfg.Metrics.Path,
-	}
-
-	metricsCollector := metrics.NewMetrics(metricsConfig)
-	defer metricsCollector.Close()
-
 	// 创建路由处理器
 	router := handler.NewRouter(fileHandler, faultHandler)
 
-	// 创建HTTP服务器
+	// 创建HTTP服务器，使用OpenTelemetry中间件
 	server := &http.Server{
 		Addr:         cfg.GetServerAddr(),
-		Handler:      middleware.RequestIDMiddleware(router), // 添加RequestID
+		Handler:      middleware.OpenTelemetryMiddleware()(router), // 使用OpenTelemetry中间件
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,
 	}
 
-	// 启动服务器
+	// 启动主服务器
 	go func() {
 		log.Printf("文件存储服务启动在 %s", cfg.GetServerAddr())
-		log.Printf("数据库表名: %s", cfg.Database.TableName)
 		log.Printf("API端点:")
 		log.Printf("  - 健康检查: GET /api/health")
 		log.Printf("  - 文件上传: POST /api/files/upload")
@@ -93,11 +100,18 @@ func main() {
 		}
 	}()
 
+	// 启动独立的指标服务器
 	go func() {
-		log.Printf("Prometheus metrics endpoint running at %s%s\n", cfg.GetMetricsAddr(), cfg.Metrics.Path)
-		http.Handle("/metrics", metricsCollector.Handler())
-		if err := http.ListenAndServe(cfg.GetMetricsAddr(), nil); err != nil {
-			log.Fatalf("Prometheus metrics 服务启动失败: %v", err)
+		metricsAddr := fmt.Sprintf(":%d", cfg.OpenTelemetry.MetricsPort)
+		log.Printf("OpenTelemetry指标端点: http://localhost%s%s", metricsAddr, cfg.OpenTelemetry.MetricsPath)
+
+		metricsServer := &http.Server{
+			Addr:    metricsAddr,
+			Handler: metricsHandler,
+		}
+
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("指标服务器启动失败: %v", err)
 		}
 	}()
 

@@ -18,25 +18,10 @@ database:
   conn_max_lifetime: "5m"
   table_name: "files"
 
-metrics:
-  service_name: "mock-storage"
+opentelemetry:
+  service_name: "storage-service"
   service_version: "1.0.0"
-  namespace: "storage"
-  enabled: true
-  port: 1080
-  path: "/metrics"
-  labels:
-    environment: "development"
-    service: "storage"
-
-logs:
-  level: "info"
-  format: "json"
-  output: ["stdout"]
-  elasticsearch:
-    enabled: true
-    host: "my-elasticsearch"
-    port: 9200
-    index: "storage-service-logs"
-    use_ssl: false
-    max_retries: 3
+  environment: "development"
+  metrics_port: 1080
+  metrics_path: "/metrics"
+  enable_tracing: false

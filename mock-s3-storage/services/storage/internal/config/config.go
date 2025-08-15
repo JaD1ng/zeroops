@@ -5,13 +5,15 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Config 应用配置
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database"`
-	Metrics  MetricsConfig  `yaml:"metrics"`
+	Server        ServerConfig        `yaml:"server"`
+	Database      DatabaseConfig      `yaml:"database"`
+	OpenTelemetry OpenTelemetryConfig `yaml:"opentelemetry"`
 }
 
 // ServerConfig 服务器配置
@@ -49,37 +51,80 @@ type MetricsConfig struct {
 	Path        string            `yaml:"path" default:"/metrics"`
 }
 
+// OpenTelemetryConfig OpenTelemetry配置
+type OpenTelemetryConfig struct {
+	ServiceName    string `json:"service_name" yaml:"service_name"`
+	ServiceVersion string `json:"service_version" yaml:"service_version"`
+	Environment    string `json:"environment" yaml:"environment"`
+	MetricsPort    int    `json:"metrics_port" yaml:"metrics_port"`
+	MetricsPath    string `json:"metrics_path" yaml:"metrics_path"`
+	EnableTracing  bool   `json:"enable_tracing" yaml:"enable_tracing"`
+}
+
 // LoadConfig 加载配置
 func LoadConfig() (*Config, error) {
-	config := &Config{
-		Server: ServerConfig{
-			Host:             getEnv("HOST", "127.0.0.1"),
-			Port:             getEnvAsInt("PORT", 8080),
-			ReadTimeout:      getEnvAsDuration("READ_TIMEOUT", 30*time.Second),
-			WriteTimeout:     getEnvAsDuration("WRITE_TIMEOUT", 30*time.Second),
-			IdleTimeout:      getEnvAsDuration("IDLE_TIMEOUT", 60*time.Second),
-			GracefulShutdown: getEnvAsDuration("GRACEFUL_SHUTDOWN", 30*time.Second),
-		},
-		Database: DatabaseConfig{
-			Host:            getEnv("DB_HOST", "localhost"),
-			Port:            getEnvAsInt("DB_PORT", 5432),
-			Database:        getEnv("DB_NAME", "mock"),
-			Username:        getEnv("DB_USER", "postgres"),
-			Password:        getEnv("DB_PASSWORD", "123456"),
-			SSLMode:         getEnv("DB_SSL_MODE", "disable"),
-			MaxOpenConns:    getEnvAsInt("DB_MAX_OPEN_CONNS", 25),
-			MaxIdleConns:    getEnvAsInt("DB_MAX_IDLE_CONNS", 25),
-			ConnMaxLifetime: getEnvAsDuration("DB_CONN_MAX_LIFETIME", 5*time.Minute),
-			TableName:       getEnv("TABLE_NAME", "files"),
-		},
-		Metrics: MetricsConfig{
-			ServiceName: getEnv("SERVICE_NAME", "file-storage-service"),
-			ServiceVer:  getEnv("SERVICE_VERSION", "1.0.0"),
-			Namespace:   getEnv("METRICS_NAMESPACE", "storage"),
-			Enabled:     getEnvAsBool("METRICS_ENABLED", true),
-			Port:        getEnvAsInt("METRICS_PORT", 1080),
-			Path:        getEnv("METRICS_PATH", "/metrics"),
-		},
+	// 尝试从YAML文件加载配置
+	config := &Config{}
+
+	// 读取config.yaml文件
+	data, err := os.ReadFile("config.yaml")
+	if err == nil {
+		// 成功读取文件，解析YAML
+		if err := yaml.Unmarshal(data, config); err != nil {
+			return nil, fmt.Errorf("解析YAML配置文件失败: %v", err)
+		}
+	} else {
+		// 文件不存在，使用默认值
+		config = &Config{
+			Server: ServerConfig{
+				Host:             getEnv("HOST", "127.0.0.1"),
+				Port:             getEnvAsInt("PORT", 8081),
+				ReadTimeout:      getEnvAsDuration("READ_TIMEOUT", 30*time.Second),
+				WriteTimeout:     getEnvAsDuration("WRITE_TIMEOUT", 30*time.Second),
+				IdleTimeout:      getEnvAsDuration("IDLE_TIMEOUT", 60*time.Second),
+				GracefulShutdown: getEnvAsDuration("GRACEFUL_SHUTDOWN", 30*time.Second),
+			},
+			Database: DatabaseConfig{
+				Host:            getEnv("DB_HOST", "localhost"),
+				Port:            getEnvAsInt("DB_PORT", 5432),
+				Database:        getEnv("DB_NAME", "mock"),
+				Username:        getEnv("DB_USER", "postgres"),
+				Password:        getEnv("DB_PASSWORD", "123456"),
+				SSLMode:         getEnv("DB_SSL_MODE", "disable"),
+				MaxOpenConns:    getEnvAsInt("DB_MAX_OPEN_CONNS", 25),
+				MaxIdleConns:    getEnvAsInt("DB_MAX_IDLE_CONNS", 25),
+				ConnMaxLifetime: getEnvAsDuration("DB_CONN_MAX_LIFETIME", 5*time.Minute),
+				TableName:       getEnv("TABLE_NAME", "files"),
+			},
+			OpenTelemetry: OpenTelemetryConfig{
+				ServiceName:    getEnv("OTEL_SERVICE_NAME", "storage-service"),
+				ServiceVersion: getEnv("OTEL_SERVICE_VERSION", "1.0.0"),
+				Environment:    getEnv("OTEL_ENVIRONMENT", "development"),
+				MetricsPort:    getEnvAsInt("OTEL_METRICS_PORT", 1080),
+				MetricsPath:    getEnv("OTEL_METRICS_PATH", "/metrics"),
+				EnableTracing:  getEnvAsBool("OTEL_ENABLE_TRACING", false),
+			},
+		}
+	}
+
+	// 环境变量覆盖YAML配置
+	if envPort := getEnvAsInt("OTEL_METRICS_PORT", 0); envPort > 0 {
+		config.OpenTelemetry.MetricsPort = envPort
+	}
+	if envServiceName := getEnv("OTEL_SERVICE_NAME", ""); envServiceName != "" {
+		config.OpenTelemetry.ServiceName = envServiceName
+	}
+	if envServiceVersion := getEnv("OTEL_SERVICE_VERSION", ""); envServiceVersion != "" {
+		config.OpenTelemetry.ServiceVersion = envServiceVersion
+	}
+	if envEnvironment := getEnv("OTEL_ENVIRONMENT", ""); envEnvironment != "" {
+		config.OpenTelemetry.Environment = envEnvironment
+	}
+	if envMetricsPath := getEnv("OTEL_METRICS_PATH", ""); envMetricsPath != "" {
+		config.OpenTelemetry.MetricsPath = envMetricsPath
+	}
+	if envEnableTracing := getEnv("OTEL_ENABLE_TRACING", "false"); envEnableTracing != "" {
+		config.OpenTelemetry.EnableTracing = getEnvAsBool("OTEL_ENABLE_TRACING", false)
 	}
 
 	return config, nil
@@ -105,7 +150,7 @@ func (c *Config) GetServerAddr() string {
 
 // GetMetricsAddr 获取指标服务地址
 func (c *Config) GetMetricsAddr() string {
-	return fmt.Sprintf(":%d", c.Metrics.Port)
+	return fmt.Sprintf(":%d", c.OpenTelemetry.MetricsPort)
 }
 
 // 辅助函数

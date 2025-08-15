@@ -7,8 +7,9 @@ import (
 
 // Router 路由处理器
 type Router struct {
-	fileHandler  *FileHandler
-	faultHandler *FaultHandler
+	fileHandler    *FileHandler
+	faultHandler   *FaultHandler
+	metricsHandler http.Handler
 }
 
 // NewRouter 创建路由处理器
@@ -17,6 +18,11 @@ func NewRouter(fileHandler *FileHandler, faultHandler *FaultHandler) *Router {
 		fileHandler:  fileHandler,
 		faultHandler: faultHandler,
 	}
+}
+
+// SetMetricsHandler 设置指标处理器
+func (r *Router) SetMetricsHandler(handler http.Handler) {
+	r.metricsHandler = handler
 }
 
 // ServeHTTP 实现http.Handler接口
@@ -37,6 +43,14 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	method := req.Method
 
 	switch {
+	// Prometheus指标端点
+	case path == "/metrics" && method == "GET":
+		if r.metricsHandler != nil {
+			r.metricsHandler.ServeHTTP(w, req)
+		} else {
+			http.NotFound(w, req)
+		}
+
 	// 健康检查
 	case path == "/api/health" && method == "GET":
 		r.fileHandler.HealthCheck(w, req)
