@@ -59,6 +59,14 @@ func DefaultLoggingConfig() LoggingConfig {
 		Level:  "info",
 		Format: "json",
 		Output: []string{"stdout"},
+		Elasticsearch: ElasticsearchConfig{
+			Enabled:    false,
+			Host:       "localhost",
+			Port:       9200,
+			Index:      "logs",
+			UseSSL:     false,
+			MaxRetries: 3,
+		},
 	}
 }
 

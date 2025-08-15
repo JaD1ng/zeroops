@@ -28,3 +28,15 @@ metrics:
   labels:
     environment: "development"
     service: "storage"
+
+logs:
+  level: "info"
+  format: "json"
+  output: ["stdout"]
+  elasticsearch:
+    enabled: true
+    host: "my-elasticsearch"
+    port: 9200
+    index: "storage-service-logs"
+    use_ssl: false
+    max_retries: 3

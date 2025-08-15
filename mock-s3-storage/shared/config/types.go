@@ -77,6 +77,8 @@ type LoggingConfig struct {
 	Level  string   `json:"level" yaml:"level" default:"info"`
 	Format string   `json:"format" yaml:"format" default:"json"`
 	Output []string `json:"output" yaml:"output" default:"[stdout]"`
+	// es配置
+	Elasticsearch ElasticsearchConfig `json:"elasticsearch" yaml:"elasticsearch"`
 }
 
 // TracingConfig 链路追踪配置
@@ -93,4 +95,16 @@ type ConsulConfig struct {
 	Datacenter string        `json:"datacenter" yaml:"datacenter" default:"dc1"`
 	Token      string        `json:"token" yaml:"token"`
 	Timeout    time.Duration `json:"timeout" yaml:"timeout" default:"10s"`
+}
+
+// ElasticsearchConfig Elasticsearch配置
+type ElasticsearchConfig struct {
+	Enabled    bool   `json:"enabled" yaml:"enabled" default:"false"`
+	Host       string `json:"host" yaml:"host" default:"localhost"`
+	Port       int    `json:"port" yaml:"port" default:"9200"`
+	Index      string `json:"index" yaml:"index" default:"logs"`
+	Username   string `json:"username" yaml:"username"`
+	Password   string `json:"password" yaml:"password"`
+	UseSSL     bool   `json:"use_ssl" yaml:"use_ssl" default:"false"`
+	MaxRetries int    `json:"max_retries" yaml:"max_retries" default:"3"`
 }

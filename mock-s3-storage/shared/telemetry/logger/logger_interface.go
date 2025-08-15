@@ -1,4 +1,4 @@
-package logs
+package logger
 
 import (
 	"context"
@@ -15,6 +15,11 @@ type Logger interface {
 
 // NewLogger 创建日志器
 func NewLogger(config config.LoggingConfig) Logger {
-	// TODO: 实现日志器
+	// 如果启用了Elasticsearch，创建Elasticsearch Logger
+	if config.Elasticsearch.Enabled {
+		return NewElasticsearchLogger(config.Elasticsearch, "storage-service")
+	}
+
+	// 否则返回nil（可以后续添加其他实现）
 	return nil
 }
