@@ -16,6 +16,7 @@ type ElasticsearchLogger struct {
 	httpClient  *http.Client
 	indexName   string
 	serviceName string
+	hostID      string
 }
 
 // LogEntry 日志条目结构
@@ -24,6 +25,7 @@ type LogEntry struct {
 	Level     string                 `json:"level"`
 	Message   string                 `json:"message"`
 	Service   string                 `json:"service"`
+	HostID    string                 `json:"host_id,omitempty"`
 	Fields    map[string]interface{} `json:"fields,omitempty"`
 	Error     string                 `json:"error,omitempty"`
 	TraceID   string                 `json:"trace_id,omitempty"`
@@ -41,11 +43,15 @@ func NewElasticsearchLogger(cfg config.ElasticsearchConfig, serviceName string) 
 	// 生成索引名称（按日期分片）
 	indexName := fmt.Sprintf("%s-%s", cfg.Index, time.Now().Format("2006.01.02"))
 
+	// 获取主机ID
+	hostID := GetHostID()
+
 	return &ElasticsearchLogger{
 		config:      cfg,
 		httpClient:  client,
 		indexName:   indexName,
 		serviceName: serviceName,
+		hostID:      hostID,
 	}
 }
 
@@ -73,6 +79,11 @@ func (l *ElasticsearchLogger) Warn(ctx context.Context, message string, fields m
 	l.log(ctx, "warn", message, "", fields)
 }
 
+// GetHostID 获取主机ID
+func (l *ElasticsearchLogger) GetHostID() string {
+	return l.hostID
+}
+
 // log 内部日志记录方法
 func (l *ElasticsearchLogger) log(ctx context.Context, level, message, errMsg string, fields map[string]any) {
 	// 构建日志条目
@@ -81,6 +92,7 @@ func (l *ElasticsearchLogger) log(ctx context.Context, level, message, errMsg st
 		Level:     level,
 		Message:   message,
 		Service:   l.serviceName,
+		HostID:    l.hostID,
 		Fields:    fields,
 	}
 

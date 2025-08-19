@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"shared/middleware"
+	"shared/telemetry/logger"
 	"shared/telemetry/opentelemetry"
 	"strings"
 	"time"
@@ -21,13 +22,15 @@ import (
 type FileHandler struct {
 	storageService   service.StorageService
 	metricsCollector *opentelemetry.MetricsCollector
+	esLogger         *logger.ElasticsearchLogger
 }
 
 // NewFileHandler 创建文件处理器
-func NewFileHandler(storageService service.StorageService, metricsCollector *opentelemetry.MetricsCollector) *FileHandler {
+func NewFileHandler(storageService service.StorageService, metricsCollector *opentelemetry.MetricsCollector, esLogger *logger.ElasticsearchLogger) *FileHandler {
 	return &FileHandler{
 		storageService:   storageService,
 		metricsCollector: metricsCollector,
+		esLogger:         esLogger,
 	}
 }
 
@@ -41,6 +44,17 @@ func (h *FileHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	// 获取request_id（测试用）
 	requestID := middleware.GetRequestID(r.Context())
+
+	// 记录请求开始日志到Elasticsearch
+	if h.esLogger != nil {
+		h.esLogger.Info(r.Context(), "开始处理文件上传请求", map[string]interface{}{
+			"method":     r.Method,
+			"path":       r.URL.Path,
+			"request_id": requestID,
+			"host_id":    h.esLogger.GetHostID(),
+		})
+	}
+
 	log.Printf("处理文件上传请求，request_id: %s", requestID)
 
 	// 检查请求方法
@@ -100,6 +114,17 @@ func (h *FileHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	// 上传文件到存储服务
 	fileInfo, err := h.storageService.UploadFile(r.Context(), fileID, fileName, contentType, file)
 	if err != nil {
+		// 记录错误日志到Elasticsearch
+		if h.esLogger != nil {
+			h.esLogger.Error(r.Context(), "文件上传失败", err, map[string]interface{}{
+				"file_id":    fileID,
+				"file_name":  fileName,
+				"file_size":  fileSize,
+				"request_id": requestID,
+				"host_id":    h.esLogger.GetHostID(),
+			})
+		}
+
 		h.metricsCollector.RecordError("storage_failed")
 		h.metricsCollector.RecordFileUpload("error")
 		http.Error(w, fmt.Sprintf("上传文件失败: %v", err), http.StatusInternalServerError)
@@ -123,6 +148,18 @@ func (h *FileHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	totalDuration := time.Since(start)
 	h.metricsCollector.RecordRequestLatency("file_upload", totalDuration)
 
+	// 记录成功日志到Elasticsearch
+	if h.esLogger != nil {
+		h.esLogger.Info(r.Context(), "文件上传成功", map[string]interface{}{
+			"file_id":     fileInfo.ID,
+			"file_name":   fileInfo.FileName,
+			"file_size":   fileInfo.FileSize,
+			"duration_ms": totalDuration.Milliseconds(),
+			"request_id":  requestID,
+			"host_id":     h.esLogger.GetHostID(),
+		})
+	}
+
 	// 返回成功响应
 	response := map[string]interface{}{
 		"success": true,
@@ -144,6 +181,17 @@ func (h *FileHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 
 	// 获取request_id（测试用）
 	requestID := middleware.GetRequestID(r.Context())
+
+	// 记录请求开始日志到Elasticsearch
+	if h.esLogger != nil {
+		h.esLogger.Info(r.Context(), "开始处理文件下载请求", map[string]interface{}{
+			"method":     r.Method,
+			"path":       r.URL.Path,
+			"request_id": requestID,
+			"host_id":    h.esLogger.GetHostID(),
+		})
+	}
+
 	log.Printf("处理文件下载请求，request_id: %s", requestID)
 
 	// 检查请求方法
@@ -168,6 +216,15 @@ func (h *FileHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	// 从存储服务下载文件
 	reader, fileInfo, err := h.storageService.DownloadFile(r.Context(), fileID)
 	if err != nil {
+		// 记录错误日志到Elasticsearch
+		if h.esLogger != nil {
+			h.esLogger.Error(r.Context(), "文件下载失败", err, map[string]interface{}{
+				"file_id":    fileID,
+				"request_id": requestID,
+				"host_id":    h.esLogger.GetHostID(),
+			})
+		}
+
 		h.metricsCollector.RecordError("file_not_found")
 		h.metricsCollector.RecordFileDownload("error")
 		http.Error(w, fmt.Sprintf("下载文件失败: %v", err), http.StatusNotFound)
@@ -185,6 +242,18 @@ func (h *FileHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	// 记录总耗时
 	totalDuration := time.Since(start)
 	h.metricsCollector.RecordRequestLatency("file_download", totalDuration)
+
+	// 记录成功日志到Elasticsearch
+	if h.esLogger != nil {
+		h.esLogger.Info(r.Context(), "文件下载成功", map[string]interface{}{
+			"file_id":     fileInfo.ID,
+			"file_name":   fileInfo.FileName,
+			"file_size":   fileInfo.FileSize,
+			"duration_ms": totalDuration.Milliseconds(),
+			"request_id":  requestID,
+			"host_id":     h.esLogger.GetHostID(),
+		})
+	}
 
 	// 设置响应头
 	w.Header().Set("Content-Type", fileInfo.ContentType)
@@ -210,6 +279,17 @@ func (h *FileHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 
 	// 获取request_id（测试用）
 	requestID := middleware.GetRequestID(r.Context())
+
+	// 记录请求开始日志到Elasticsearch
+	if h.esLogger != nil {
+		h.esLogger.Info(r.Context(), "开始处理文件删除请求", map[string]interface{}{
+			"method":     r.Method,
+			"path":       r.URL.Path,
+			"request_id": requestID,
+			"host_id":    h.esLogger.GetHostID(),
+		})
+	}
+
 	log.Printf("处理文件删除请求，request_id: %s", requestID)
 
 	// 检查请求方法
@@ -234,6 +314,15 @@ func (h *FileHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 	// 从存储服务删除文件
 	err := h.storageService.DeleteFile(r.Context(), fileID)
 	if err != nil {
+		// 记录错误日志到Elasticsearch
+		if h.esLogger != nil {
+			h.esLogger.Error(r.Context(), "文件删除失败", err, map[string]interface{}{
+				"file_id":    fileID,
+				"request_id": requestID,
+				"host_id":    h.esLogger.GetHostID(),
+			})
+		}
+
 		h.metricsCollector.RecordError("file_not_found")
 		h.metricsCollector.RecordFileDelete("error")
 		http.Error(w, fmt.Sprintf("删除文件失败: %v", err), http.StatusNotFound)
@@ -250,6 +339,16 @@ func (h *FileHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 	// 记录总耗时
 	totalDuration := time.Since(start)
 	h.metricsCollector.RecordRequestLatency("file_delete", totalDuration)
+
+	// 记录成功日志到Elasticsearch
+	if h.esLogger != nil {
+		h.esLogger.Info(r.Context(), "文件删除成功", map[string]interface{}{
+			"file_id":     fileID,
+			"duration_ms": totalDuration.Milliseconds(),
+			"request_id":  requestID,
+			"host_id":     h.esLogger.GetHostID(),
+		})
+	}
 
 	// 返回成功响应
 	response := map[string]interface{}{

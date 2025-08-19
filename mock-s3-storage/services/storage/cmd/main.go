@@ -10,7 +10,9 @@ import (
 	"syscall"
 	"time"
 
+	sharedconfig "shared/config"
 	"shared/middleware"
+	"shared/telemetry/logger"
 	"shared/telemetry/opentelemetry"
 	"storage-service/internal/config"
 	"storage-service/internal/handler"
@@ -44,6 +46,27 @@ func main() {
 		log.Fatalf("初始化OpenTelemetry失败: %v", err)
 	}
 
+	// 获取日志记录器
+	otelLogger := telemetryProvider.GetLogger()
+
+	// 如果启用了Elasticsearch日志，创建Elasticsearch日志记录器
+	var esLogger *logger.ElasticsearchLogger
+	if cfg.Logging.Elasticsearch.Enabled {
+		// 转换配置类型
+		esConfig := sharedconfig.ElasticsearchConfig{
+			Enabled:    cfg.Logging.Elasticsearch.Enabled,
+			Host:       cfg.Logging.Elasticsearch.Host,
+			Port:       cfg.Logging.Elasticsearch.Port,
+			Index:      cfg.Logging.Elasticsearch.Index,
+			Username:   cfg.Logging.Elasticsearch.Username,
+			Password:   cfg.Logging.Elasticsearch.Password,
+			UseSSL:     cfg.Logging.Elasticsearch.UseSSL,
+			MaxRetries: cfg.Logging.Elasticsearch.MaxRetries,
+		}
+		esLogger = logger.NewElasticsearchLogger(esConfig, cfg.OpenTelemetry.ServiceName)
+		log.Printf("Elasticsearch日志记录器已启用，索引: %s", cfg.Logging.Elasticsearch.Index)
+	}
+
 	// 获取指标处理器
 	metricsHandler := telemetryProvider.GetMetricsHandler()
 
@@ -60,8 +83,8 @@ func main() {
 	}
 	defer storageService.Close()
 
-	// 创建文件处理器
-	fileHandler := handler.NewFileHandler(storageService, metricsCollector)
+	// 创建文件处理器，传入Elasticsearch日志记录器
+	fileHandler := handler.NewFileHandler(storageService, metricsCollector, esLogger)
 
 	// 创建故障处理器
 	faultService := repository.NewFaultServiceImpl()
@@ -70,10 +93,13 @@ func main() {
 	// 创建路由处理器
 	router := handler.NewRouter(fileHandler, faultHandler)
 
-	// 创建HTTP服务器，使用OpenTelemetry中间件
+	// 创建HTTP服务器，使用中间件链
+	// 注意：RequestID中间件应该在OpenTelemetry中间件之前执行
 	server := &http.Server{
-		Addr:         cfg.GetServerAddr(),
-		Handler:      middleware.OpenTelemetryMiddleware()(router), // 使用OpenTelemetry中间件
+		Addr: cfg.GetServerAddr(),
+		Handler: middleware.RequestIDMiddleware(
+			middleware.OpenTelemetryMiddleware()(router),
+		), // 先添加RequestID中间件，再添加OpenTelemetry中间件
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,
@@ -81,6 +107,12 @@ func main() {
 
 	// 启动主服务器
 	go func() {
+		// 使用结构化日志记录服务启动信息
+		otelLogger.Info(context.Background(), "文件存储服务启动", map[string]interface{}{
+			"server_addr":  cfg.GetServerAddr(),
+			"metrics_port": cfg.OpenTelemetry.MetricsPort,
+		})
+
 		log.Printf("文件存储服务启动在 %s", cfg.GetServerAddr())
 		log.Printf("API端点:")
 		log.Printf("  - 健康检查: GET /api/health")

@@ -82,6 +82,11 @@ func (l *Logger) log(ctx context.Context, level, message string, fields map[stri
 		"env":       l.config.Environment,
 	}
 
+	// 添加Request ID（如果可用）
+	if requestID := getRequestID(ctx); requestID != "" {
+		logEntry["request_id"] = requestID
+	}
+
 	// 添加字段
 	if fields != nil {
 		for k, v := range fields {
@@ -89,19 +94,22 @@ func (l *Logger) log(ctx context.Context, level, message string, fields map[stri
 		}
 	}
 
-	// 添加追踪信息（如果可用）
-	if traceID := getTraceID(ctx); traceID != "" {
-		logEntry["trace_id"] = traceID
-	}
-	if spanID := getSpanID(ctx); spanID != "" {
-		logEntry["span_id"] = spanID
-	}
+	// 不添加trace_id和span_id，保持为空
+	// 这样日志中就不会有这些字段，或者字段值为空
 
 	// 输出日志（这里可以替换为其他输出方式，如Elasticsearch）
 	log.Printf("[%s] %s: %s", level, l.config.ServiceName, message)
 	if len(fields) > 0 {
 		log.Printf("Fields: %+v", fields)
 	}
+}
+
+// getRequestID 从上下文中获取request_id
+func getRequestID(ctx context.Context) string {
+	if requestID, ok := ctx.Value("request_id").(string); ok {
+		return requestID
+	}
+	return ""
 }
 
 // getTraceID 从上下文中获取trace_id

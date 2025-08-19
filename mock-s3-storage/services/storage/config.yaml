@@ -25,3 +25,19 @@ opentelemetry:
   metrics_port: 1080
   metrics_path: "/metrics"
   enable_tracing: false
+
+
+# 日志配置
+logging:
+  level: "info"
+  format: "json"
+  output: ["stdout", "elasticsearch"]
+  elasticsearch:
+    enabled: true
+    host: "localhost"
+    port: 9200
+    index: "storage-service-logs"
+    username: ""
+    password: ""
+    use_ssl: false
+    max_retries: 3

@@ -14,6 +14,7 @@ type Config struct {
 	Server        ServerConfig        `yaml:"server"`
 	Database      DatabaseConfig      `yaml:"database"`
 	OpenTelemetry OpenTelemetryConfig `yaml:"opentelemetry"`
+	Logging       LoggingConfig       `yaml:"logging"`
 }
 
 // ServerConfig 服务器配置
@@ -59,6 +60,26 @@ type OpenTelemetryConfig struct {
 	MetricsPort    int    `json:"metrics_port" yaml:"metrics_port"`
 	MetricsPath    string `json:"metrics_path" yaml:"metrics_path"`
 	EnableTracing  bool   `json:"enable_tracing" yaml:"enable_tracing"`
+}
+
+// LoggingConfig 日志配置
+type LoggingConfig struct {
+	Level         string              `yaml:"level" default:"info"`
+	Format        string              `yaml:"format" default:"json"`
+	Output        []string            `yaml:"output" default:"[stdout]"`
+	Elasticsearch ElasticsearchConfig `yaml:"elasticsearch"`
+}
+
+// ElasticsearchConfig Elasticsearch配置
+type ElasticsearchConfig struct {
+	Enabled    bool   `yaml:"enabled" default:"false"`
+	Host       string `yaml:"host" default:"localhost"`
+	Port       int    `yaml:"port" default:"9200"`
+	Index      string `yaml:"index" default:"logs"`
+	Username   string `yaml:"username"`
+	Password   string `yaml:"password"`
+	UseSSL     bool   `yaml:"use_ssl" default:"false"`
+	MaxRetries int    `yaml:"max_retries" default:"3"`
 }
 
 // LoadConfig 加载配置
