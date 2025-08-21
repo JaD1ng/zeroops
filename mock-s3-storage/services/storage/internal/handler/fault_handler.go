@@ -4,16 +4,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"storage-service/internal/service"
+	"shared/faults"
+	"shared/faults/cpu"
+	"shared/faults/memory"
 	"strings"
+	"time"
 )
 
 type FaultHandler struct {
-	faultService service.FaultService
+	faultManager *faults.FaultManager
 }
 
-func NewFaultHandler(s service.FaultService) *FaultHandler {
-	return &FaultHandler{faultService: s}
+func NewFaultHandler() *FaultHandler {
+	manager := faults.NewFaultManager()
+	// 注册所有故障实例
+	manager.Register(memory.NewMemLeakFault(1*1024*1024, 15000*time.Millisecond))
+	manager.Register(cpu.NewCpuSpikeFault(90, 4, 100*time.Millisecond)) // CPU使用率90%，4个工作goroutine，100ms间隔
+	return &FaultHandler{faultManager: manager}
 }
 
 // StartFault 处理 /fault/start/{name} POST 请求
@@ -27,7 +34,7 @@ func (h *FaultHandler) StartFault(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "fault name required", http.StatusBadRequest)
 		return
 	}
-	err := h.faultService.StartFault(name)
+	err := h.faultManager.Start(name)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("start fault failed: %v", err), http.StatusInternalServerError)
 		return
@@ -46,7 +53,7 @@ func (h *FaultHandler) StopFault(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "fault name required", http.StatusBadRequest)
 		return
 	}
-	err := h.faultService.StopFault(name)
+	err := h.faultManager.Stop(name)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("stop fault failed: %v", err), http.StatusInternalServerError)
 		return
@@ -65,7 +72,7 @@ func (h *FaultHandler) GetFaultStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "fault name required", http.StatusBadRequest)
 		return
 	}
-	status, err := h.faultService.GetFaultStatus(name)
+	status, err := h.faultManager.Status(name)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("get fault status failed: %v", err), http.StatusNotFound)
 		return
@@ -79,7 +86,7 @@ func (h *FaultHandler) ListFaults(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "只支持GET方法", http.StatusMethodNotAllowed)
 		return
 	}
-	list, err := h.faultService.ListFaults()
+	list, err := h.faultManager.List()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("list faults failed: %v", err), http.StatusInternalServerError)
 		return

@@ -36,7 +36,7 @@ logging:
     enabled: true
     host: "localhost"
     port: 9200
-    index: "storage-service-logs"
+    index: "mock-storage-service-logs"
     username: ""
     password: ""
     use_ssl: false

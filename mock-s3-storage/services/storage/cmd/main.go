@@ -87,8 +87,7 @@ func main() {
 	fileHandler := handler.NewFileHandler(storageService, metricsCollector, esLogger)
 
 	// 创建故障处理器
-	faultService := repository.NewFaultServiceImpl()
-	faultHandler := handler.NewFaultHandler(faultService)
+	faultHandler := handler.NewFaultHandler()
 
 	// 创建路由处理器
 	router := handler.NewRouter(fileHandler, faultHandler)
