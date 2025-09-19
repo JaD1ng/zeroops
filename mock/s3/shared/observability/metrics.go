@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/prometheus/procfs"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
 
@@ -47,6 +48,9 @@ type MetricCollector struct {
 	networkQPS          metric.Float64Gauge
 	machineOnlineStatus metric.Int64Gauge
 
+	// HTTP 请求指标
+	httpRequestDuration metric.Float64Histogram
+
 	// 统计状态
 	cpuStats     *CPUStats
 	networkStats *NetworkStats
@@ -55,6 +59,10 @@ type MetricCollector struct {
 
 	// 错误注入器
 	metricInjector MetricInjector
+
+	// 服务属性
+	serviceName    string
+	serviceVersion string
 }
 
 // NewMetricCollector 创建指标收集器
@@ -81,6 +89,12 @@ func NewMetricCollector(meter metric.Meter, logger *Logger) (*MetricCollector, e
 	}
 
 	return collector, nil
+}
+
+// SetServiceInfo 设置服务信息
+func (c *MetricCollector) SetServiceInfo(serviceName, serviceVersion string) {
+	c.serviceName = serviceName
+	c.serviceVersion = serviceVersion
 }
 
 // SetMetricInjector 设置错误注入器
@@ -135,6 +149,18 @@ func (c *MetricCollector) initMetrics() error {
 	if c.machineOnlineStatus, err = c.meter.Int64Gauge(
 		"system_machine_online_status",
 		metric.WithDescription("Machine online status (1 = online, 0 = offline)"),
+	); err != nil {
+		return err
+	}
+
+	// HTTP 请求时延 (使用 Prometheus 兼容的命名)
+	if c.httpRequestDuration, err = c.meter.Float64Histogram(
+		"http.server.request.duration_seconds",
+		metric.WithDescription("HTTP server request duration in seconds"),
+		metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(
+			0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10,
+		),
 	); err != nil {
 		return err
 	}
@@ -413,7 +439,16 @@ func (c *MetricCollector) collectNetworkMetrics(ctx context.Context) {
 			finalValue = c.metricInjector.InjectMetricAnomaly(ctx, "system_network_qps", qps)
 		}
 
-		c.networkQPS.Record(ctx, finalValue)
+		// 添加服务属性作为标签
+		attrs := []attribute.KeyValue{}
+		if c.serviceName != "" {
+			attrs = append(attrs, attribute.String("exported_job", c.serviceName))
+		}
+		if c.serviceVersion != "" {
+			attrs = append(attrs, attribute.String("service_version", c.serviceVersion))
+		}
+
+		c.networkQPS.Record(ctx, finalValue, metric.WithAttributes(attrs...))
 	}
 	c.networkStats.lastUpdate = now
 }
@@ -485,4 +520,25 @@ func (c *MetricCollector) updateMachineStatus(ctx context.Context) {
 	}
 
 	c.machineOnlineStatus.Record(ctx, int64(finalValue))
+}
+
+// RecordHTTPRequestDuration 记录 HTTP 请求时延
+func (c *MetricCollector) RecordHTTPRequestDuration(ctx context.Context, duration float64, method, path string, statusCode int) {
+	// 构建属性标签
+	attrs := []attribute.KeyValue{
+		attribute.String("http.method", method),
+		attribute.String("http.route", path),
+		attribute.Int("http.status_code", statusCode),
+	}
+
+	// 添加服务属性
+	if c.serviceName != "" {
+		attrs = append(attrs, attribute.String("exported_job", c.serviceName))
+	}
+	if c.serviceVersion != "" {
+		attrs = append(attrs, attribute.String("service_version", c.serviceVersion))
+	}
+
+	// 记录时延（以秒为单位）
+	c.httpRequestDuration.Record(ctx, duration, metric.WithAttributes(attrs...))
 }

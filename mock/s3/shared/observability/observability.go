@@ -30,6 +30,9 @@ func Setup(serviceName string, configPath string) (*Providers, *MetricCollector,
 		return nil, nil, nil, fmt.Errorf("failed to create metric collector: %w", err)
 	}
 
+	// 设置服务信息到指标收集器
+	collector.SetServiceInfo(config.ServiceName, config.ServiceVersion)
+
 	// 创建HTTP中间件
 	httpMiddleware := NewHTTPMiddleware(collector, providers.Logger)
 
