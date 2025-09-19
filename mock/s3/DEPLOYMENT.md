@@ -55,11 +55,12 @@ sudo supervisorctl start zeroops_*
 ps aux | grep zeroops_
 
 # 健康检查
-curl http://localhost:8181/health  # metadata-service
-curl http://localhost:8191/health  # storage-service
-curl http://localhost:8201/health  # queue-service
-curl http://localhost:8211/health  # third-party-service
-curl http://localhost:8221/health  # mock-error-service
+```
+for port in 8182 8183 8191 8192 8201 8202 8211 8221; do
+    echo "Checking port $port:"
+    curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" http://localhost:$port/metrics ||echo "Failed"
+done
+```
 
 # 查看日志
 tail -f /home/qboxserver/zeroops_metadata_1/logs/service.log
