@@ -47,7 +47,8 @@ type ServiceBootstrap struct {
 	HTTPMiddleware *observability.HTTPMiddleware
 
 	// 错误注入
-	MetricInjector *error_injection.MetricInjector
+	MetricInjector  *error_injection.MetricInjector
+	LatencyInjector *error_injection.HTTPLatencyInjector
 
 	// Consul客户端
 	ConsulClient consul.ConsulClient
@@ -286,10 +287,14 @@ func firstIPv4(addrs []net.Addr) string {
 func (sb *ServiceBootstrap) setupErrorInjection() error {
 	ctx := context.Background()
 
-	// 尝试从配置文件加载
+	// 获取服务版本（默认为 1.0.0）
+	serviceVersion := "1.0.0"
+
+	// 尝试从配置文件加载指标注入器
 	metricInjector, err := error_injection.NewMetricInjector(
 		sb.MetricInjectorConfigPath,
 		sb.Config.GetServiceName(),
+		serviceVersion,
 		sb.Logger,
 	)
 
@@ -300,6 +305,7 @@ func (sb *ServiceBootstrap) setupErrorInjection() error {
 		sb.MetricInjector = error_injection.NewMetricInjectorWithDefaults(
 			"http://mock-error-service:8085",
 			sb.Config.GetServiceName(),
+			serviceVersion,
 			sb.Logger,
 		)
 	} else {
@@ -307,7 +313,24 @@ func (sb *ServiceBootstrap) setupErrorInjection() error {
 	}
 
 	if sb.MetricInjector != nil {
-		sb.Logger.Info(ctx, "Metric injector initialized successfully")
+		sb.Logger.Info(ctx, "Metric injector initialized successfully",
+			observability.String("service_version", serviceVersion))
+	}
+
+	// 创建HTTP延迟注入器
+	sb.LatencyInjector = error_injection.NewHTTPLatencyInjector(
+		"http://mock-error-service:8085",
+		sb.Config.GetServiceName(),
+		serviceVersion,
+		sb.Logger,
+	)
+
+	// 将延迟注入器连接到HTTP中间件
+	if sb.HTTPMiddleware != nil && sb.LatencyInjector != nil {
+		sb.HTTPMiddleware.SetLatencyInjector(sb.LatencyInjector)
+		sb.Logger.Info(ctx, "HTTP latency injector connected to middleware",
+			observability.String("service", sb.Config.GetServiceName()),
+			observability.String("version", serviceVersion))
 	}
 
 	return nil
@@ -405,6 +428,12 @@ func (sb *ServiceBootstrap) waitForShutdown(server *http.Server) {
 	if sb.MetricInjector != nil {
 		sb.MetricInjector.Cleanup()
 		sb.Logger.Info(ctx, "Metric injector cleaned up")
+	}
+
+	// 清理延迟注入器资源
+	if sb.LatencyInjector != nil {
+		sb.LatencyInjector.Cleanup()
+		sb.Logger.Info(ctx, "Latency injector cleaned up")
 	}
 
 	// 关闭HTTP服务器
