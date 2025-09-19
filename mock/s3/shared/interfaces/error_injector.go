@@ -15,7 +15,7 @@ type MetricAnomalyService interface {
 	ListRules(ctx context.Context) ([]*models.MetricAnomalyRule, error)
 
 	// 指标异常注入核心功能
-    ShouldInjectError(ctx context.Context, service, metricName, instance string) (map[string]any, bool)
+	ShouldInjectError(ctx context.Context, service, metricName, instance string) (map[string]any, bool)
 }
 
 // MetricInjector HTTP指标异常注入器接口

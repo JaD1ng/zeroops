@@ -1,15 +1,15 @@
 package server
 
 import (
-    "context"
-    "fmt"
-    "mocks3/shared/observability"
-    "net/http"
-    "net"
-    "os"
-    "os/signal"
-    "syscall"
-    "time"
+	"context"
+	"fmt"
+	"mocks3/shared/observability"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"mocks3/shared/middleware/consul"
@@ -174,7 +174,7 @@ func (sb *ServiceBootstrap) setupObservability() error {
 
 // setupConsulRegistration 设置Consul服务注册
 func (sb *ServiceBootstrap) setupConsulRegistration() error {
-    ctx := context.Background()
+	ctx := context.Background()
 
 	// 检查配置是否支持Consul
 	consulConfig, ok := sb.Config.(ConsulServiceConfig)
@@ -191,23 +191,23 @@ func (sb *ServiceBootstrap) setupConsulRegistration() error {
 
 	sb.ConsulClient = consulClient
 
-    // 注册服务到Consul
-    // 优先使用可达的容器/主机实例IP地址进行注册，确保多实例下目标唯一
-    var registerAddress string
-    if sb.Config.GetHost() == "0.0.0.0" {
-        // 允许通过环境变量覆盖对外公布地址
-        if envAddr := os.Getenv("ADVERTISE_ADDR"); envAddr != "" {
-            registerAddress = envAddr
-        } else {
-            ip, err := detectAdvertiseAddr()
-            if err != nil {
-                return fmt.Errorf("failed to detect advertise address: %w", err)
-            }
-            registerAddress = ip
-        }
-    } else {
-        registerAddress = sb.Config.GetHost()
-    }
+	// 注册服务到Consul
+	// 优先使用可达的容器/主机实例IP地址进行注册，确保多实例下目标唯一
+	var registerAddress string
+	if sb.Config.GetHost() == "0.0.0.0" {
+		// 允许通过环境变量覆盖对外公布地址
+		if envAddr := os.Getenv("ADVERTISE_ADDR"); envAddr != "" {
+			registerAddress = envAddr
+		} else {
+			ip, err := detectAdvertiseAddr()
+			if err != nil {
+				return fmt.Errorf("failed to detect advertise address: %w", err)
+			}
+			registerAddress = ip
+		}
+	} else {
+		registerAddress = sb.Config.GetHost()
+	}
 
 	err = consul.RegisterService(ctx, consulClient,
 		sb.Config.GetServiceName(),
@@ -217,69 +217,69 @@ func (sb *ServiceBootstrap) setupConsulRegistration() error {
 		return fmt.Errorf("failed to register service with Consul: %w", err)
 	}
 
-    sb.Logger.Info(ctx, "Service registered with Consul successfully",
-        observability.String("consul_addr", consulConfig.GetConsulAddress()),
-        observability.String("service_name", sb.Config.GetServiceName()),
-        observability.String("register_address", registerAddress))
+	sb.Logger.Info(ctx, "Service registered with Consul successfully",
+		observability.String("consul_addr", consulConfig.GetConsulAddress()),
+		observability.String("service_name", sb.Config.GetServiceName()),
+		observability.String("register_address", registerAddress))
 
-    return nil
+	return nil
 }
 
 // detectAdvertiseAddr 自动探测一个非回环的IPv4地址，优先选择常见容器网卡
 func detectAdvertiseAddr() (string, error) {
-    // 优先尝试常见的容器网卡名称
-    preferredIfaces := []string{"eth0", "ens3", "ens4", "en0"}
-    for _, name := range preferredIfaces {
-        ifi, err := net.InterfaceByName(name)
-        if err == nil && (ifi.Flags&net.FlagUp) != 0 {
-            addrs, err := ifi.Addrs()
-            if err == nil {
-                if ip := firstIPv4(addrs); ip != "" {
-                    return ip, nil
-                }
-            }
-        }
-    }
+	// 优先尝试常见的容器网卡名称
+	preferredIfaces := []string{"eth0", "ens3", "ens4", "en0"}
+	for _, name := range preferredIfaces {
+		ifi, err := net.InterfaceByName(name)
+		if err == nil && (ifi.Flags&net.FlagUp) != 0 {
+			addrs, err := ifi.Addrs()
+			if err == nil {
+				if ip := firstIPv4(addrs); ip != "" {
+					return ip, nil
+				}
+			}
+		}
+	}
 
-    // 回退：遍历所有网卡，取第一个非回环且Up的IPv4
-    ifaces, err := net.Interfaces()
-    if err != nil {
-        return "", err
-    }
-    for _, ifi := range ifaces {
-        if (ifi.Flags&net.FlagUp) == 0 || (ifi.Flags&net.FlagLoopback) != 0 {
-            continue
-        }
-        addrs, err := ifi.Addrs()
-        if err != nil {
-            continue
-        }
-        if ip := firstIPv4(addrs); ip != "" {
-            return ip, nil
-        }
-    }
-    return "", fmt.Errorf("no non-loopback IPv4 address found")
+	// 回退：遍历所有网卡，取第一个非回环且Up的IPv4
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", err
+	}
+	for _, ifi := range ifaces {
+		if (ifi.Flags&net.FlagUp) == 0 || (ifi.Flags&net.FlagLoopback) != 0 {
+			continue
+		}
+		addrs, err := ifi.Addrs()
+		if err != nil {
+			continue
+		}
+		if ip := firstIPv4(addrs); ip != "" {
+			return ip, nil
+		}
+	}
+	return "", fmt.Errorf("no non-loopback IPv4 address found")
 }
 
 func firstIPv4(addrs []net.Addr) string {
-    for _, a := range addrs {
-        var ip net.IP
-        switch v := a.(type) {
-        case *net.IPNet:
-            ip = v.IP
-        case *net.IPAddr:
-            ip = v.IP
-        }
-        if ip == nil {
-            continue
-        }
-        ip4 := ip.To4()
-        if ip4 == nil || ip4.IsLoopback() {
-            continue
-        }
-        return ip4.String()
-    }
-    return ""
+	for _, a := range addrs {
+		var ip net.IP
+		switch v := a.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		}
+		if ip == nil {
+			continue
+		}
+		ip4 := ip.To4()
+		if ip4 == nil || ip4.IsLoopback() {
+			continue
+		}
+		return ip4.String()
+	}
+	return ""
 }
 
 // setupErrorInjection 设置错误注入中间件
