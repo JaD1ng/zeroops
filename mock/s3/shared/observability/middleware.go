@@ -29,9 +29,25 @@ func (m *HTTPMiddleware) GinMetricsMiddleware() gin.HandlerFunc {
 		// 处理请求
 		c.Next()
 
-		// 计算基本信息用于日志记录
+		// 计算请求时延
 		duration := time.Since(start)
 		statusCode := c.Writer.Status()
+
+		// 记录 HTTP 请求时延指标（以秒为单位）
+		if m.collector != nil {
+			durationSeconds := duration.Seconds()
+			path := c.FullPath()
+			if path == "" {
+				path = c.Request.URL.Path // 如果没有匹配的路由，使用原始路径
+			}
+			m.collector.RecordHTTPRequestDuration(
+				c.Request.Context(),
+				durationSeconds,
+				c.Request.Method,
+				path,
+				statusCode,
+			)
+		}
 
 		// 只记录错误请求的日志
 		if statusCode >= 400 {

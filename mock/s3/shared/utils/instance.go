@@ -62,7 +62,7 @@ func GetInstanceID(serviceName string) string {
 func generateInstanceID(serviceName string) string {
 	// 清理服务名：移除常见后缀，转换为小写
 	cleanServiceName := cleanServiceName(serviceName)
-	
+
 	// 生成8位短UUID
 	shortUUID := generateShortUUID()
 	if shortUUID == "" {
@@ -75,7 +75,7 @@ func generateInstanceID(serviceName string) string {
 // cleanServiceName 清理服务名
 func cleanServiceName(serviceName string) string {
 	name := strings.ToLower(serviceName)
-	
+
 	// 移除常见后缀
 	suffixes := []string{"-service", "_service", "service"}
 	for _, suffix := range suffixes {
@@ -84,11 +84,11 @@ func cleanServiceName(serviceName string) string {
 			break
 		}
 	}
-	
+
 	// 替换特殊字符为连字符
 	name = strings.ReplaceAll(name, "_", "-")
 	name = strings.ReplaceAll(name, " ", "-")
-	
+
 	return name
 }
 
