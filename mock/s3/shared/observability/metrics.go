@@ -153,9 +153,9 @@ func (c *MetricCollector) initMetrics() error {
 		return err
 	}
 
-	// HTTP 请求时延 (使用 Prometheus 兼容的命名)
+	// HTTP 请求时延
 	if c.httpRequestDuration, err = c.meter.Float64Histogram(
-		"http.server.request.duration_seconds",
+		"http_latency",
 		metric.WithDescription("HTTP server request duration in seconds"),
 		metric.WithUnit("s"),
 		metric.WithExplicitBucketBoundaries(
