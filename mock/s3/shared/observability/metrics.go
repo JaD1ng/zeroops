@@ -439,11 +439,8 @@ func (c *MetricCollector) collectNetworkMetrics(ctx context.Context) {
 			finalValue = c.metricInjector.InjectMetricAnomaly(ctx, "system_network_qps", qps)
 		}
 
-		// 添加服务属性作为标签
+		// 添加服务版本标签（exported_job 冗余，已通过 service_name 资源属性暴露）
 		attrs := []attribute.KeyValue{}
-		if c.serviceName != "" {
-			attrs = append(attrs, attribute.String("exported_job", c.serviceName))
-		}
 		if c.serviceVersion != "" {
 			attrs = append(attrs, attribute.String("service_version", c.serviceVersion))
 		}
@@ -524,17 +521,14 @@ func (c *MetricCollector) updateMachineStatus(ctx context.Context) {
 
 // RecordHTTPRequestDuration 记录 HTTP 请求时延
 func (c *MetricCollector) RecordHTTPRequestDuration(ctx context.Context, duration float64, method, path string, statusCode int) {
-	// 构建属性标签
+	// 构建属性标签（移除 exported_job，保留 service_version）
 	attrs := []attribute.KeyValue{
 		attribute.String("http.method", method),
 		attribute.String("http.route", path),
 		attribute.Int("http.status_code", statusCode),
 	}
 
-	// 添加服务属性
-	if c.serviceName != "" {
-		attrs = append(attrs, attribute.String("exported_job", c.serviceName))
-	}
+	// 添加服务版本（必要标签，用于版本区分）
 	if c.serviceVersion != "" {
 		attrs = append(attrs, attribute.String("service_version", c.serviceVersion))
 	}
