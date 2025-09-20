@@ -76,13 +76,13 @@
 
 ### 4) alert_rules（告警规则表）
 
-｜ 字段名 ｜ 类型 ｜ 说明 ｜
+| 字段名 | 类型 | 说明 |
 |--------|------|------|
-｜name｜varchar(255)｜主键，告警规则名称｜
-｜description｜text｜可读标题，可拼接渲染为可读的 title｜
-｜expr｜text｜左侧业务指标表达式，（通常对应 PromQL 左侧的聚合，如 sum(apitime) by (service, version)）｜
-｜op｜varchar(4)｜阈值比较方式（枚举：>, <, =, !=）｜
-｜severity｜varchar(32)｜告警等级，通常进入告警的 labels.severity｜
+| name | varchar(255) | 主键，告警规则名称 |
+| description | text | 可读标题，可拼接渲染为可读的 title |
+| expr | text | 左侧业务指标表达式，（通常对应 PromQL 左侧的聚合，如 sum(apitime) by (service, version)） |
+| op | varchar(4) | 阈值比较方式（枚举：>, <, =, !=） |
+| severity | varchar(32) | 告警等级，通常进入告警的 labels.severity |
 
 **约束建议：**
 - CHECK 约束：`op IN ('>', '<', '=', '!=')`
@@ -91,11 +91,12 @@
 
 ### 5) alert_rule_metas（规则阈值元信息表）
 
-字段名	类型	说明
-alert_name	varchar(255)	关联 `alert_rules.name`
-labels	jsonb	适用标签（示例：{"service":"s3","version":"v1"}）；为空 `{}` 表示全局
-threshold	numeric	阈值（会被渲染成特定规则的 threshold metric 数值）
-watch_time	interval	持续时长（映射 Prometheus rule 的 for:）
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| alert_name | varchar(255) | 关联 `alert_rules.name` |
+| labels | jsonb | 适用标签（示例：{"service":"s3","version":"v1"}）；为空 `{}` 表示全局 |
+| threshold | numeric | 阈值（会被渲染成特定规则的 threshold metric 数值） |
+| watch_time | interval | 持续时长（映射 Prometheus rule 的 for:） |
 
 **约束与索引建议：**
 - FOREIGN KEY: `(alert_name)` REFERENCES `alert_rules(name)` ON DELETE CASCADE

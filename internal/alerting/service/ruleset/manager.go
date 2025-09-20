@@ -32,20 +32,35 @@ func (m *Manager) AddAlertRule(ctx context.Context, r *AlertRule) error {
 	if r == nil || r.Name == "" {
 		return fmt.Errorf("invalid rule")
 	}
-	if err := m.store.CreateRule(ctx, r); err != nil {
-		return err
+	// First ensure the rule is added to Prometheus successfully
+	// This guarantees Prometheus has the correct data even if DB write fails
+	if err := m.prom.AddToPrometheus(ctx, r); err != nil {
+		return fmt.Errorf("failed to add rule to Prometheus: %w", err)
 	}
-	return m.prom.AddToPrometheus(ctx, r)
+	// Then persist to database
+	// If this fails, the rule will still be in Prometheus, which is better than
+	// having it in DB but not in Prometheus (which would cause missing alerts)
+	if err := m.store.CreateRule(ctx, r); err != nil {
+		return fmt.Errorf("failed to create rule in database: %w", err)
+	}
+	return nil
 }
 
 func (m *Manager) DeleteAlertRule(ctx context.Context, name string) error {
 	if name == "" {
 		return fmt.Errorf("invalid name")
 	}
-	if err := m.store.DeleteRule(ctx, name); err != nil {
-		return err
+	// First remove from Prometheus to stop alerting immediately
+	// This prevents false alerts if DB deletion fails
+	if err := m.prom.DeleteFromPrometheus(ctx, name); err != nil {
+		return fmt.Errorf("failed to delete rule from Prometheus: %w", err)
 	}
-	return m.prom.DeleteFromPrometheus(ctx, name)
+	// Then remove from database
+	// If this fails, the rule is already removed from Prometheus (no false alerts)
+	if err := m.store.DeleteRule(ctx, name); err != nil {
+		return fmt.Errorf("failed to delete rule from database: %w", err)
+	}
+	return nil
 }
 
 func (m *Manager) AddToPrometheus(ctx context.Context, r *AlertRule) error {
@@ -66,33 +81,54 @@ func (m *Manager) UpsertRuleMetas(ctx context.Context, meta *AlertRuleMeta) erro
 	if err := validateMeta(meta); err != nil {
 		return err
 	}
+
+	// First, get the old meta for change logging
+	oldList, err := m.store.GetMetas(ctx, meta.AlertName, meta.Labels)
+	if err != nil {
+		return err
+	}
+	var old *AlertRuleMeta
+	if len(oldList) > 0 {
+		old = oldList[0]
+	}
+
+	// Prepare change log parameters outside of transaction to minimize lock time
+	var changeLog *ChangeLog
+	if old != nil || meta != nil {
+		changeLog = m.prepareChangeLog(old, meta)
+	}
+
+	// First ensure the meta is synced to Prometheus successfully
+	// This guarantees Prometheus has the correct threshold data even if DB write fails
+	if err := m.prom.SyncMetaToPrometheus(ctx, meta); err != nil {
+		return fmt.Errorf("failed to sync meta to Prometheus: %w", err)
+	}
+
+	// Then persist to database within a transaction
+	// If this fails, the meta will still be in Prometheus, which is better than
+	// having it in DB but not in Prometheus (which would cause incorrect thresholds)
 	return m.store.WithTx(ctx, func(tx Store) error {
-		oldList, err := tx.GetMetas(ctx, meta.AlertName, meta.Labels)
-		if err != nil {
-			return err
-		}
-		var old *AlertRuleMeta
-		if len(oldList) > 0 {
-			old = oldList[0]
-		}
 		_, err = tx.UpsertMeta(ctx, meta)
 		if err != nil {
 			return err
 		}
-		if err := m.RecordMetaChangeLog(ctx, old, meta); err != nil {
-			return err
-		}
-		if err := m.prom.SyncMetaToPrometheus(ctx, meta); err != nil {
-			return err
+		// Insert pre-prepared change log
+		if changeLog != nil {
+			if err := tx.InsertChangeLog(ctx, changeLog); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
 }
 
-func (m *Manager) RecordMetaChangeLog(ctx context.Context, oldMeta, newMeta *AlertRuleMeta) error {
+// prepareChangeLog prepares change log parameters outside of transaction to minimize lock time
+func (m *Manager) prepareChangeLog(oldMeta, newMeta *AlertRuleMeta) *ChangeLog {
 	if newMeta == nil {
 		return nil
 	}
+
+	// Prepare all parameters outside of transaction
 	var oldTh, newTh *float64
 	var oldW, newW *time.Duration
 	if oldMeta != nil {
@@ -103,8 +139,14 @@ func (m *Manager) RecordMetaChangeLog(ctx context.Context, oldMeta, newMeta *Ale
 		newTh = &newMeta.Threshold
 		newW = &newMeta.WatchTime
 	}
-	log := &ChangeLog{
-		ID:           fmt.Sprintf("%s-%s-%d", newMeta.AlertName, CanonicalLabelKey(newMeta.Labels), time.Now().UnixNano()),
+
+	// Generate ID and timestamp outside of transaction
+	now := time.Now()
+	changeTime := now.UTC()
+	id := fmt.Sprintf("%s-%s-%d", newMeta.AlertName, CanonicalLabelKey(newMeta.Labels), now.UnixNano())
+
+	return &ChangeLog{
+		ID:           id,
 		AlertName:    newMeta.AlertName,
 		ChangeType:   classifyChange(oldMeta, newMeta),
 		Labels:       newMeta.Labels,
@@ -112,9 +154,16 @@ func (m *Manager) RecordMetaChangeLog(ctx context.Context, oldMeta, newMeta *Ale
 		NewThreshold: newTh,
 		OldWatch:     oldW,
 		NewWatch:     newW,
-		ChangeTime:   time.Now().UTC(),
+		ChangeTime:   changeTime,
 	}
-	return m.store.InsertChangeLog(ctx, log)
+}
+
+func (m *Manager) RecordMetaChangeLog(ctx context.Context, oldMeta, newMeta *AlertRuleMeta) error {
+	changeLog := m.prepareChangeLog(oldMeta, newMeta)
+	if changeLog == nil {
+		return nil
+	}
+	return m.store.InsertChangeLog(ctx, changeLog)
 }
 
 func classifyChange(oldMeta, newMeta *AlertRuleMeta) string {
