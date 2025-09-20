@@ -2,7 +2,7 @@
 
 ## 概述
 
-本文档为最新数据库设计，总计包含 6 张表：
+本文档为最新数据库设计，总计包含 7 张表：
 
 - alert_issues
 - alert_issue_comments
@@ -10,6 +10,7 @@
 - alert_rules
 - alert_rule_metas
 - service_states
+- heal_actions
 
 ## 数据表设计
 
@@ -111,7 +112,7 @@
 
 ---
 
-### 7) service_states（服务状态表）
+### 6) service_states（服务状态表）
 
 追踪服务在某一版本上的健康状态与处置进度。
 
@@ -126,6 +127,34 @@
 
 **索引建议：**
 - PRIMARY KEY: `(service, version)`
+
+---
+
+### 7) heal_actions（告警治愈解决方案表）
+
+存储不同故障域对应的治愈方案和规则。
+
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| id | varchar(255) PK | 治愈方案 ID |
+| desc | text | 简单描述，如 action 是处理什么告警场景的 |
+| type | varchar(255) | 对应的故障域类型 |
+| rules | jsonb | 条件规则：{condition1: action1, condition2: action2} |
+
+**索引建议：**
+- PRIMARY KEY: `id`
+- INDEX: `(type)`
+
+**示例数据：**
+```sql
+INSERT INTO heal_actions (id, desc, type, rules) VALUES 
+('service_version_rollback', '服务版本回滚方案', 'service_version_issue', 
+ '{"deployment_status": "deploying", "action": "rollback", "target": "previous_version"}'),
+('service_version_alert', '服务版本告警方案', 'service_version_issue', 
+ '{"deployment_status": "deployed", "action": "alert", "message": "版本已发布，暂不支持自动回滚"}');
+```
+
+TODO： health_state映射逻辑
 
 ## 数据关系（ER）
 
@@ -175,9 +204,17 @@ erDiagram
         text content
     }
 
+    heal_actions {
+        varchar id PK
+        text desc
+        varchar type
+        jsonb rules
+    }
+
     %% 通过 service 等标签在应用层逻辑关联
     alert_rule_metas ||..|| alert_rules : "by alert_name"
     service_states ||..|| alert_rule_metas : "by service/version labels"
+    heal_actions ||..|| alert_issues : "by fault domain analysis"
 ```
 
 ## 数据流转
@@ -185,3 +222,7 @@ erDiagram
 1. 以 `alert_rules` 为模版，结合 `alert_rule_metas` 渲染出面向具体服务/版本等的规则（labels 可为空 `{}` 表示全局默认，或包含如 service/version 等标签）。
 2. 指标或规则参数发生调整时，记录到 `alert_meta_change_logs`。
 3. 规则触发创建 `alert_issues`；处理过程中的动作写入 `alert_issue_comments`。
+4. **告警治愈流程**：
+   - P0 告警：根据 `alert_issues.labels` 识别故障域，查询 `heal_actions` 获取治愈方案
+   - 执行治愈操作（如回滚），成功后更新 `alert_issues` 和 `service_states` 状态
+   - P1/P2 告警：直接进入下钻分析，记录分析结果到 `alert_issue_comments`
