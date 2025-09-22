@@ -131,9 +131,9 @@ func ValidatePackageURL(packageURL string) error
 func GetServiceInstanceIDs(serviceName string, version ...string) ([]string, error)
 ```
 
-### 5.3 **GetInstanceHost**: 根据实例ID获取实例的IP地址
+### 5.3 **GetInstanceIP**: 根据实例ID获取实例的IP地址
 ```go
-func GetInstanceHost(instanceID string) (string, error)
+func GetInstanceIP(instanceID string) (string, error)
 ```
 
 ### 5.4 **GetInstancePort**: 根据实例ID获取实例的端口号

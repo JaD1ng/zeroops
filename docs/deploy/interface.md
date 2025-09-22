@@ -204,13 +204,13 @@ version     ...string // 选填，指定版本号进行过滤，未输入则默�
 
 **返回结果**: `[]string` - 实例ID数组
 
-### 4.3 GetInstanceHost函数
+### 4.3 GetInstanceIP函数
 
 **函数描述**: 根据实例ID获取实例的IP地址
 
 **函数签名**:
 ```go
-func GetInstanceHost(instanceID string) (string, error)
+func GetInstanceIP(instanceID string) (string, error)
 ```
 
 **输入参数**:
