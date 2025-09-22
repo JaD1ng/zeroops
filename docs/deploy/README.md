@@ -26,8 +26,8 @@
 ┌─────────────────┐    方法调用    ┌─────────────────┐    网络通信    ┌─────────────────┐
 │   调度系统       │ ──────────────▶ │   发布系统       │ ──────────────▶ │   实例节点       │
 │                 │                │                 │                │                 │
-│  • 发布指令     │                │  • 执行发布操作  │                │  • 服务实例       │
-│  • 批次规划     │                │  • 状态跟踪      │                │  • 版本更新      │
+│  • 发布指令     │                │  • 发布操作      │                │  • 服务实例       │
+│  • 批次规划     │                │  • 实例管理      │                │  • 版本更新      │
 │  • 健康检查     │                │  • 回滚操作      │                │  • 状态上报      │
 │                 │                │                 │                │                │
 └─────────────────┘                └─────────────────┘                └─────────────────┘
@@ -77,27 +77,33 @@
 
 - **DeployService**: 发布服务接口，负责发布和回滚操作的执行
 - **InstanceManager**: 实例管理接口，负责实例信息查询和状态管理
+- **HostManager**: 主机管理接口，负责主机信息查询和管理
 
 ### 4.1 DeployService接口
+
+#### 4.1.1 接口定义
 
 发布服务接口，负责发布和回滚操作的执行。
 
 ```go
 type DeployService interface {
-    ExecuteDeployment(params *DeployParams) (*OperationResult, error)
+    DeployNewService(params *DeployNewServiceParams) (*OperationResult, error)
+    DeployNewVersion(params *DeployNewVersionParams) (*OperationResult, error)
     ExecuteRollback(params *RollbackParams) (*OperationResult, error)
 }
 ```
 
-#### 4.1.1 ExecuteDeployment方法
+#### 4.1.2 方法说明
 
-触发指定服务版本的发布操作
+**DeployNewService方法**: 在指定主机上部署新服务
 
-#### 4.1.2 ExecuteRollback方法
+**DeployNewVersion方法**: 触发指定服务版本的发布操作
 
-对指定实例执行回滚操作，支持单实例或批量实例回滚
+**ExecuteRollback方法**: 对指定实例执行回滚操作，支持单实例或批量实例回滚
 
 ### 4.2 InstanceManager接口
+
+#### 4.2.1 接口定义
 
 实例管理接口，负责实例信息查询和状态管理，发布模块和服务管理模块都需要使用。
 
@@ -108,20 +114,139 @@ type InstanceManager interface {
 }
 ```
 
-#### 4.2.1 方法说明
+#### 4.2.2 方法说明
 
-**GetServiceInstances**: 获取指定服务的实例详细信息，可选择按版本过滤
+**GetServiceInstances方法**: 获取指定服务的实例详细信息，可选择按版本过滤
 
-**GetInstanceVersionHistory**: 获取指定实例的版本历史记录
+**GetInstanceVersionHistory方法**: 获取指定实例的版本历史记录
+
+### 4.3 HostManager接口
+
+#### 4.3.1 接口定义
+
+主机管理接口，负责主机信息查询和管理，发布模块需要获取主机信息进行部署操作。
+
+```go
+type HostManager interface {
+    GetHosts() ([]*HostInfo, error)
+}
+```
+
+#### 4.3.2 方法说明
+
+**GetHosts方法**: 获取发布系统管理的全部主机信息
 
 ## 5. 内部工具函数
 
-**ValidatePackageURL**: 验证包URL的有效性和安全性
+### 5.1 ValidatePackageURL函数
 
-**GetServiceInstanceIDs**: 根据服务名和版本获取实例ID列表，用于内部批量操作
+**函数描述**: 验证是否能通过URL找到包
 
-**GetInstanceHost**: 根据实例ID获取实例的IP地址
+**函数签名**:
+```go
+func ValidatePackageURL(packageURL string) error
+```
 
-**GetInstancePort**: 根据实例ID获取实例的端口号
+**输入参数**:
+```go
+packageURL string // 必填，包下载URL
+```
 
-**CheckInstanceHealth**: 检查单个实例是否有响应，用于发布前验证目标实例的可用性
+**返回结果**: `error` - 验证失败时返回错误信息
+
+### 5.2 GetServiceInstanceIDs函数
+
+**函数描述**: 根据服务名和版本获取实例ID列表，用于内部批量操作
+
+**函数签名**:
+```go
+func GetServiceInstanceIDs(serviceName string, version ...string) ([]string, error)
+```
+
+**输入参数**:
+```go
+serviceName string   // 必填，服务名称
+version     ...string // 选填，指定版本号进行过滤，未输入则默认获取全部版本的运行实例
+```
+
+**返回结果**: `[]string` - 实例ID数组
+
+### 5.3 GetInstanceHost函数
+
+**函数描述**: 根据实例ID获取实例的IP地址
+
+**函数签名**:
+```go
+func GetInstanceHost(instanceID string) (string, error)
+```
+
+**输入参数**:
+```go
+instanceID string // 必填，实例ID
+```
+
+**返回结果**: `string` - 实例的IP地址，获取失败时返回错误信息
+
+### 5.4 GetInstancePort函数
+
+**函数描述**: 根据实例ID获取实例的端口号
+
+**函数签名**:
+```go
+func GetInstancePort(instanceID string) (int, error)
+```
+
+**输入参数**:
+```go
+instanceID string // 必填，实例ID
+```
+
+**返回结果**: `int` - 实例的端口号，获取失败时返回错误信息
+
+### 5.5 CheckInstanceHealth函数
+
+**函数描述**: 检查单个实例是否有响应，用于发布前验证目标实例的可用性
+
+**函数签名**:
+```go
+func CheckInstanceHealth(instanceID string) (bool, error)
+```
+
+**输入参数**:
+```go
+instanceID string // 必填，实例ID
+```
+
+**返回结果**: `bool` - 健康检查结果，true表示实例有响应，false表示无响应
+
+### 5.6 GetHostIp函数
+
+**函数描述**: 根据主机名获取主机IP地址
+
+**函数签名**:
+```go
+func GetHostIp(hostName string) (string, error)
+```
+
+**输入参数**:
+```go
+hostName string // 必填，主机名称
+```
+
+**返回结果**: `string` - 主机的IP地址，获取失败时返回错误信息
+
+### 5.7 CheckHostHealth函数
+
+**函数描述**: 判断主机运行状态，用于发布前验证目标主机的可用性
+
+**函数签名**:
+```go
+func CheckHostHealth(hostIpAddress string) (bool, error)
+```
+
+**输入参数**:
+```go
+hostIpAddress string // 必填，主机IP地址
+```
+
+**返回结果**: `bool` - 健康检查结果，true表示主机有响应，false表示无响应
