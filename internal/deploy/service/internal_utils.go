@@ -29,3 +29,15 @@ func CheckInstanceHealth(instanceID string) (bool, error) {
 	// TODO: 实现实例健康检查逻辑
 	return false, nil
 }
+
+// GetHostIp 根据主机名获取主机IP地址
+func GetHostIp(hostName string) (string, error) {
+	// TODO: 实现主机名称解析逻辑
+	return "", nil
+}
+
+// CheckHostHealth 判断主机运行状态
+func CheckHostHealth(hostIpAddress string) (bool, error) {
+	// TODO: 实现主机健康检查逻辑
+	return true, nil
+}
