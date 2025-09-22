@@ -240,31 +240,58 @@ func (f *floyDeployService) ExecuteRollback(params *model.RollbackParams) (*mode
 		return nil, err
 	}
 
-	// 3. 检查目标实例健康状态
+	// 3. 下载回滚包文件
+	packageFilePath, md5sum, err := f.downloadPackage(params.PackageURL)
+	if err != nil {
+		return nil, fmt.Errorf("下载回滚包文件失败: %v", err)
+	}
+	// 确保在函数结束时清理临时文件
+	defer os.Remove(packageFilePath)
+
+	// 4. 计算fversion
+	fversion := f.calculateFversion(params.Service, "prod", params.TargetVersion)
+
+	// 5. 串行回滚到各个实例（单实例容错）
+	successInstances := []string{}
 	for _, instanceID := range params.Instances {
+
+		// 5.1 检查实例健康状态
 		healthy, err := CheckInstanceHealth(instanceID)
 		if err != nil {
-			return nil, err
+			// 记录错误但继续处理其他实例
+			fmt.Printf("实例 %s 健康检查失败: %v\n", instanceID, err)
+			continue
 		}
 		if !healthy {
-			return nil, fmt.Errorf("实例 %s 健康检查失败", instanceID)
+			// 记录错误但继续处理其他实例
+			fmt.Printf("实例 %s 健康检查失败\n", instanceID)
+			continue
 		}
+
+		// 5.2 获取实例IP
+		instanceIP, err := GetInstanceHost(instanceID)
+		if err != nil {
+			// 记录错误但继续处理其他实例
+			fmt.Printf("获取实例 %s 的IP失败: %v\n", instanceID, err)
+			continue
+		}
+
+		// 5.3 回滚到单个实例
+		if err := f.rollbackToSingleInstance(instanceIP, params.Service, params.TargetVersion, fversion, packageFilePath, md5sum); err != nil {
+			// 记录错误但继续处理其他实例
+			fmt.Printf("回滚到实例 %s (%s) 失败: %v\n", instanceID, instanceIP, err)
+			continue
+		}
+
+		successInstances = append(successInstances, instanceID)
 	}
 
-	// 4. 执行回滚逻辑
-	// TODO: 实现具体的回滚逻辑
-	// - 下载目标版本包
-	// - 停止当前服务
-	// - 部署目标版本
-	// - 启动服务
-	// - 验证回滚结果
-
-	// 5. 返回结果
+	// 6. 构造返回结果
 	result := &model.OperationResult{
 		Service:        params.Service,
 		Version:        params.TargetVersion,
-		Instances:      params.Instances,
-		TotalInstances: len(params.Instances),
+		Instances:      successInstances,
+		TotalInstances: len(successInstances),
 	}
 
 	return result, nil
@@ -412,6 +439,31 @@ func (f *floyDeployService) deployToSingleInstance(instanceIP, service, version,
 	if wantPkg {
 		if err := f.pushPackage(instanceIP, service, fversion, version, packageFilePath, md5sum); err != nil {
 			return fmt.Errorf("推送包文件失败: %v", err)
+		}
+	}
+
+	// 3. 推送配置文件
+	if wantConfig {
+		if err := f.pushConfig(instanceIP, service, fversion); err != nil {
+			return fmt.Errorf("推送配置文件失败: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// rollbackToSingleInstance 回滚到单个实例
+func (f *floyDeployService) rollbackToSingleInstance(instanceIP, service, targetVersion, fversion string, packageFilePath string, md5sum []byte) error {
+	// 1. Ping检查
+	wantPkg, wantConfig, err := f.ping(instanceIP, service, fversion, targetVersion, "Auto rollback")
+	if err != nil {
+		return fmt.Errorf("ping检查失败: %v", err)
+	}
+
+	// 2. 推送回滚包文件
+	if wantPkg {
+		if err := f.pushPackage(instanceIP, service, fversion, targetVersion, packageFilePath, md5sum); err != nil {
+			return fmt.Errorf("推送回滚包文件失败: %v", err)
 		}
 	}
 
