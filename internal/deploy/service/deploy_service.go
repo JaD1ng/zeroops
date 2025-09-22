@@ -118,10 +118,12 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 	}
 
 	// 3. 下载包文件
-	packageData, md5sum, err := f.downloadPackage(params.PackageURL)
+	packageFilePath, md5sum, err := f.downloadPackage(params.PackageURL)
 	if err != nil {
 		return nil, err
 	}
+	// 确保在函数结束时清理临时文件
+	defer os.Remove(packageFilePath)
 
 	// 4. 计算fversion
 	fversion := f.calculateFversion(params.Service, "prod", params.Version)
@@ -138,7 +140,7 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 		}
 
 		// 5.2 对单个主机执行部署
-		if err := f.deployToSingleHost(hostIP, params.Service, params.Version, fversion, packageData, md5sum); err != nil {
+		if err := f.deployToSingleHost(hostIP, params.Service, params.Version, fversion, packageFilePath, md5sum); err != nil {
 			// 记录错误但继续处理其他主机
 			fmt.Printf("部署到主机 %s (%s) 失败: %v\n", hostName, hostIP, err)
 			continue
@@ -170,10 +172,12 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 	}
 
 	// 3. 下载包文件
-	packageData, md5sum, err := f.downloadPackage(params.PackageURL)
+	packageFilePath, md5sum, err := f.downloadPackage(params.PackageURL)
 	if err != nil {
 		return nil, fmt.Errorf("下载包文件失败: %v", err)
 	}
+	// 确保在函数结束时清理临时文件
+	defer os.Remove(packageFilePath)
 
 	// 4. 计算fversion
 	fversion := f.calculateFversion(params.Service, "prod", params.Version)
@@ -204,7 +208,7 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 		}
 
 		// 5.3 部署到单个实例
-		if err := f.deployToSingleInstance(instanceIP, params.Service, params.Version, fversion, packageData, md5sum); err != nil {
+		if err := f.deployToSingleInstance(instanceIP, params.Service, params.Version, fversion, packageFilePath, md5sum); err != nil {
 			// 记录错误但继续处理其他实例
 			fmt.Printf("部署到实例 %s (%s) 失败: %v\n", instanceID, instanceIP, err)
 			continue
@@ -306,30 +310,50 @@ func (f *floyDeployService) validateDeployNewVersionParams(params *model.DeployN
 	return nil
 }
 
-// downloadPackage 下载包文件
-func (f *floyDeployService) downloadPackage(packageURL string) ([]byte, []byte, error) {
+// downloadPackage 流式下载包文件到临时文件
+func (f *floyDeployService) downloadPackage(packageURL string) (string, []byte, error) {
+	// 创建临时文件
+	tmpFile, err := os.CreateTemp("", "deploy-package-*.tmp")
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create temp file: %v", err)
+	}
+	tmpFilePath := tmpFile.Name()
+
+	// 下载包文件
 	resp, err := http.Get(packageURL)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to download package: %v", err)
+		tmpFile.Close()
+		os.Remove(tmpFilePath)
+		return "", nil, fmt.Errorf("failed to download package: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, nil, fmt.Errorf("failed to download package: status %d", resp.StatusCode)
+		tmpFile.Close()
+		os.Remove(tmpFilePath)
+		return "", nil, fmt.Errorf("failed to download package: status %d", resp.StatusCode)
 	}
 
-	// 读取包内容
-	packageData, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read package data: %v", err)
-	}
-
-	// 计算MD5
+	// 流式写入临时文件并计算MD5
 	h := md5.New()
-	h.Write(packageData)
-	md5sum := h.Sum(nil)
+	multiWriter := io.MultiWriter(tmpFile, h)
 
-	return packageData, md5sum, nil
+	_, err = io.Copy(multiWriter, resp.Body)
+	if err != nil {
+		tmpFile.Close()
+		os.Remove(tmpFilePath)
+		return "", nil, fmt.Errorf("failed to write package data: %v", err)
+	}
+
+	// 关闭文件
+	err = tmpFile.Close()
+	if err != nil {
+		os.Remove(tmpFilePath)
+		return "", nil, fmt.Errorf("failed to close temp file: %v", err)
+	}
+
+	md5sum := h.Sum(nil)
+	return tmpFilePath, md5sum, nil
 }
 
 // calculateFversion 计算版本号
@@ -351,7 +375,7 @@ func (f *floyDeployService) calculateFversion(service, env, version string) stri
 }
 
 // deployToSingleHost 部署到单个主机
-func (f *floyDeployService) deployToSingleHost(hostIP, service, version, fversion string, packageData, md5sum []byte) error {
+func (f *floyDeployService) deployToSingleHost(hostIP, service, version, fversion string, packageFilePath string, md5sum []byte) error {
 	// 1. Ping检查
 	wantPkg, wantConfig, err := f.ping(hostIP, service, fversion, version, "Auto deploy new service")
 	if err != nil {
@@ -360,7 +384,7 @@ func (f *floyDeployService) deployToSingleHost(hostIP, service, version, fversio
 
 	// 2. 推送包文件
 	if wantPkg {
-		if err := f.pushPackage(hostIP, service, fversion, version, packageData, md5sum); err != nil {
+		if err := f.pushPackage(hostIP, service, fversion, version, packageFilePath, md5sum); err != nil {
 			return fmt.Errorf("推送包文件失败: %v", err)
 		}
 	}
@@ -376,7 +400,7 @@ func (f *floyDeployService) deployToSingleHost(hostIP, service, version, fversio
 }
 
 // deployToSingleInstance 部署到单个实例
-func (f *floyDeployService) deployToSingleInstance(instanceIP, service, version, fversion string, packageData, md5sum []byte) error {
+func (f *floyDeployService) deployToSingleInstance(instanceIP, service, version, fversion string, packageFilePath string, md5sum []byte) error {
 	// 1. Ping检查
 	wantPkg, wantConfig, err := f.ping(instanceIP, service, fversion, version, "Auto deploy")
 	if err != nil {
@@ -385,7 +409,7 @@ func (f *floyDeployService) deployToSingleInstance(instanceIP, service, version,
 
 	// 2. 推送包文件
 	if wantPkg {
-		if err := f.pushPackage(instanceIP, service, fversion, version, packageData, md5sum); err != nil {
+		if err := f.pushPackage(instanceIP, service, fversion, version, packageFilePath, md5sum); err != nil {
 			return fmt.Errorf("推送包文件失败: %v", err)
 		}
 	}
@@ -487,7 +511,7 @@ func (f *floyDeployService) ping(instanceIP, service, fversion, version, message
 }
 
 // pushPackage 推送包文件
-func (f *floyDeployService) pushPackage(instanceIP, service, fversion, version string, packageData, md5sum []byte) error {
+func (f *floyDeployService) pushPackage(instanceIP, service, fversion, version string, packageFilePath string, md5sum []byte) error {
 	baseURL := fmt.Sprintf("http://%s:%s", instanceIP, f.port)
 
 	// 使用 multipart.Writer 构造请求体
@@ -500,16 +524,23 @@ func (f *floyDeployService) pushPackage(instanceIP, service, fversion, version s
 	writer.WriteField("pkgOwner", "qboxserver")
 	writer.WriteField("installDir", "")
 
+	// 打开包文件
+	packageFile, err := os.Open(packageFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to open package file: %v", err)
+	}
+	defer packageFile.Close()
+
 	// 创建文件字段
 	fileWriter, err := writer.CreateFormFile("file", version)
 	if err != nil {
 		return fmt.Errorf("failed to create form file: %v", err)
 	}
 
-	// 写入文件数据
-	_, err = fileWriter.Write(packageData)
+	// 流式复制文件数据
+	_, err = io.Copy(fileWriter, packageFile)
 	if err != nil {
-		return fmt.Errorf("failed to write file data: %v", err)
+		return fmt.Errorf("failed to copy file data: %v", err)
 	}
 
 	// 关闭 writer 以完成 multipart 格式
