@@ -15,23 +15,27 @@
 
 ```go
 type DeployService interface {
-    ExecuteDeployment(params *DeployParams) (*OperationResult, error)
+    DeployNewService(params *DeployNewServiceParams) (*OperationResult, error)
+    DeployNewVersion(params *DeployNewVersionParams) (*OperationResult, error)
     ExecuteRollback(params *RollbackParams) (*OperationResult, error)
 }
 ```
 
-### 2.2 ExecuteDeployment方法
+### 2.2 结构体定义
 
-**方法描述**: 触发指定服务版本的发布操作
-
-**方法签名**:
+**DeployNewServiceParams结构体**:
 ```go
-ExecuteDeployment(params *DeployParams) (*OperationResult, error)
+type DeployNewServiceParams struct {
+    Service    string   `json:"service"`     // 必填，服务名称
+    Version    string   `json:"version"`     // 必填，目标版本号
+    Hosts      []string `json:"hosts"`       // 必填，主机名称列表
+    PackageURL string   `json:"package_url"` // 必填，包下载URL
+}
 ```
 
-**输入参数**:
+**DeployNewVersionParams结构体**:
 ```go
-type DeployParams struct {
+type DeployNewVersionParams struct {
     Service    string   `json:"service"`     // 必填，服务名称
     Version    string   `json:"version"`     // 必填，目标版本号
     Instances  []string `json:"instances"`   // 必填，实例ID列表
@@ -39,26 +43,7 @@ type DeployParams struct {
 }
 ```
 
-**返回结果**:
-```go
-type OperationResult struct {
-    Service        string   `json:"service"`         // 服务名称
-    Version        string   `json:"version"`         // 操作的目标版本
-    Instances      []string `json:"instances"`       // 实际操作的实例ID列表
-    TotalInstances int      `json:"total_instances"` // 操作的实例总数
-}
-```
-
-### 2.3 ExecuteRollback方法
-
-**方法描述**: 对指定实例执行回滚操作，支持单实例或批量实例回滚
-
-**方法签名**:
-```go
-ExecuteRollback(params *RollbackParams) (*OperationResult, error)
-```
-
-**输入参数**:
+**RollbackParams结构体**:
 ```go
 type RollbackParams struct {
     Service       string   `json:"service"`        // 必填，服务名称
@@ -68,7 +53,54 @@ type RollbackParams struct {
 }
 ```
 
-**返回结果**: `*OperationResult` - 使用通用的操作结果结构体
+**OperationResult结构体**:
+```go
+type OperationResult struct {
+    Service        string   `json:"service"`         // 服务名称
+    Version        string   `json:"version"`         // 操作的目标版本
+    Instances      []string `json:"instances"`       // 实际操作的实例ID列表
+    TotalInstances int      `json:"total_instances"` // 操作的实例总数
+}
+```
+
+### 2.3 DeployNewService方法
+
+**方法描述**: 在指定主机上部署新服务
+
+**方法签名**:
+```go
+DeployNewService(params *DeployNewServiceParams) (*OperationResult, error)
+```
+
+**输入参数**: `*DeployNewServiceParams` - 新服务部署参数
+
+**返回结果**: `*OperationResult` - 操作结果
+
+### 2.4 DeployNewVersion方法
+
+**方法描述**: 触发指定服务版本的发布操作
+
+**方法签名**:
+```go
+DeployNewVersion(params *DeployNewVersionParams) (*OperationResult, error)
+```
+
+**输入参数**: `*DeployNewVersionParams` - 版本发布参数
+
+**返回结果**: `*OperationResult` - 操作结果
+
+### 2.5 ExecuteRollback方法
+
+**方法描述**: 对指定实例执行回滚操作，支持单实例或批量实例回滚
+
+**方法签名**:
+```go
+ExecuteRollback(params *RollbackParams) (*OperationResult, error)
+```
+
+**输入参数**: `*RollbackParams` - 回滚参数
+
+**返回结果**: `*OperationResult` - 操作结果
 
 ## 3. InstanceManager接口
 
@@ -83,7 +115,7 @@ type InstanceManager interface {
 }
 ```
 
-### 3.2 数据结构定义
+### 3.2 结构体定义
 
 **InstanceInfo结构体**:
 ```go
@@ -136,9 +168,44 @@ instanceID string // 必填，实例ID
 
 **返回结果**: `[]*VersionInfo` - 版本历史数组
 
-## 4. 内部工具函数
+## 4. HostManager接口
 
-### 4.1 ValidatePackageURL函数
+### 4.1 接口定义
+
+主机管理接口，负责主机信息查询和管理，发布模块需要获取主机信息进行部署操作。
+
+```go
+type HostManager interface {
+    GetHosts() ([]*HostInfo, error)
+}
+```
+
+### 4.2 结构体定义
+
+**HostInfo结构体**:
+```go
+type HostInfo struct {
+    HostName string `json:"host_name"` // 主机名称
+    HostIP   string `json:"host_ip"`   // 主机IP地址
+}
+```
+
+### 4.3 GetHosts方法
+
+**方法描述**: 获取发布系统管理的全部主机信息
+
+**方法签名**:
+```go
+GetHosts() ([]*HostInfo, error)
+```
+
+**输入参数**: 无
+
+**返回结果**: `[]*HostInfo` - 主机信息数组
+
+## 5. 内部工具函数
+
+### 5.1 ValidatePackageURL函数
 
 **函数描述**: 验证是否能通过URL找到包
 
@@ -154,7 +221,7 @@ packageURL string // 必填，包下载URL
 
 **返回结果**: `error` - 验证失败时返回错误信息
 
-### 4.2 GetServiceInstanceIDs函数
+### 5.2 GetServiceInstanceIDs函数
 
 **函数描述**: 根据服务名和版本获取实例ID列表，用于内部批量操作
 
@@ -171,7 +238,7 @@ version     ...string // 选填，指定版本号进行过滤，未输入则默�
 
 **返回结果**: `[]string` - 实例ID数组
 
-### 4.3 GetInstanceHost函数
+### 5.3 GetInstanceHost函数
 
 **函数描述**: 根据实例ID获取实例的IP地址
 
@@ -187,7 +254,7 @@ instanceID string // 必填，实例ID
 
 **返回结果**: `string` - 实例的IP地址，获取失败时返回错误信息
 
-### 4.4 GetInstancePort函数
+### 5.4 GetInstancePort函数
 
 **函数描述**: 根据实例ID获取实例的端口号
 
@@ -203,7 +270,7 @@ instanceID string // 必填，实例ID
 
 **返回结果**: `int` - 实例的端口号，获取失败时返回错误信息
 
-### 4.5 CheckInstanceHealth函数
+### 5.5 CheckInstanceHealth函数
 
 **函数描述**: 检查单个实例是否有响应，用于发布前验证目标实例的可用性
 
@@ -218,3 +285,35 @@ instanceID string // 必填，实例ID
 ```
 
 **返回结果**: `bool` - 健康检查结果，true表示实例有响应，false表示无响应
+
+### 5.6 GetHostIp函数
+
+**函数描述**: 根据主机名获取主机IP地址
+
+**函数签名**:
+```go
+func GetHostIp(hostName string) (string, error)
+```
+
+**输入参数**:
+```go
+hostName string // 必填，主机名称
+```
+
+**返回结果**: `string` - 主机的IP地址，获取失败时返回错误信息
+
+### 5.7 CheckHostHealth函数
+
+**函数描述**: 判断主机运行状态，用于发布前验证目标主机的可用性
+
+**函数签名**:
+```go
+func CheckHostHealth(hostIpAddress string) (bool, error)
+```
+
+**输入参数**:
+```go
+hostIpAddress string // 必填，主机IP地址
+```
+
+**返回结果**: `bool` - 健康检查结果，true表示主机有响应，false表示无响应
