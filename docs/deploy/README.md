@@ -77,7 +77,6 @@
 
 - **DeployService**: 发布服务接口，负责发布和回滚操作的执行
 - **InstanceManager**: 实例管理接口，负责实例信息查询和状态管理
-- **HostManager**: 主机管理接口，负责主机信息查询和管理
 
 ### 4.1 DeployService接口
 
@@ -119,22 +118,6 @@ type InstanceManager interface {
 **GetServiceInstances方法**: 获取指定服务的实例详细信息，可选择按版本过滤
 
 **GetInstanceVersionHistory方法**: 获取指定实例的版本历史记录
-
-### 4.3 HostManager接口
-
-#### 4.3.1 接口定义
-
-主机管理接口，负责主机信息查询和管理，发布模块需要获取主机信息进行部署操作。
-
-```go
-type HostManager interface {
-    GetHosts() ([]*HostInfo, error)
-}
-```
-
-#### 4.3.2 方法说明
-
-**GetHosts方法**: 获取发布系统管理的全部主机信息
 
 ## 5. 内部工具函数
 
