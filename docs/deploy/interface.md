@@ -252,7 +252,20 @@ instanceID string // 必填，实例ID
 
 **返回结果**: `bool` - 健康检查结果，true表示实例有响应，false表示无响应
 
-### 4.6 GetHostIp函数
+### 4.6 GetAvailableHosts函数
+
+**函数描述**: 获取所有可用的主机列表
+
+**函数签名**:
+```go
+func GetAvailableHosts() ([]string, error)
+```
+
+**输入参数**: 无
+
+**返回结果**: `[]string` - 可用主机列表，获取失败时返回错误信息
+
+### 4.7 GetHostIp函数
 
 **函数描述**: 根据主机名获取主机IP地址
 
@@ -268,7 +281,7 @@ hostName string // 必填，主机名称
 
 **返回结果**: `string` - 主机的IP地址，获取失败时返回错误信息
 
-### 4.7 CheckHostHealth函数
+### 4.8 CheckHostHealth函数
 
 **函数描述**: 判断主机运行状态，用于发布前验证目标主机的可用性
 
@@ -283,3 +296,67 @@ hostIpAddress string // 必填，主机IP地址
 ```
 
 **返回结果**: `bool` - 健康检查结果，true表示主机有响应，false表示无响应
+
+### 4.9 SelectHostForNewInstance函数
+
+**函数描述**: 为新实例选择合适的主机
+
+**函数签名**:
+```go
+func SelectHostForNewInstance(availableHosts []string, service string, version string) (string, error)
+```
+
+**输入参数**:
+```go
+availableHosts []string // 必填，可用主机列表
+service        string   // 必填，服务名称
+version        string   // 必填，版本号
+```
+
+**返回结果**: `string` - 选择的主机名，选择失败时返回错误信息
+
+### 4.10 GenerateInstanceID函数
+
+**函数描述**: 根据服务名生成实例ID
+
+**函数签名**:
+```go
+func GenerateInstanceID(serviceName string) (string, error)
+```
+
+**输入参数**:
+```go
+serviceName string // 必填，服务名称
+```
+
+**返回结果**: `string` - 生成的实例ID，生成失败时返回错误信息
+
+### 4.11 GenerateInstanceIP函数
+
+**函数描述**: 生成实例IP地址
+
+**函数签名**:
+```go
+func GenerateInstanceIP() (string, error)
+```
+
+**输入参数**: 无
+
+**返回结果**: `string` - 生成的实例IP地址，生成失败时返回错误信息
+
+### 4.12 GenerateInstance函数
+
+**函数描述**: 创建实例
+
+**函数签名**:
+```go
+func GenerateInstance(instanceID string, instanceIP string) error
+```
+
+**输入参数**:
+```go
+instanceID string // 必填，实例ID
+instanceIP string // 必填，实例IP地址
+```
+
+**返回结果**: `error` - 创建失败时返回错误信息

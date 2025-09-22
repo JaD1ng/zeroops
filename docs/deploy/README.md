@@ -146,12 +146,37 @@ func GetInstancePort(instanceID string) (int, error)
 func CheckInstanceHealth(instanceID string) (bool, error)
 ```
 
-### 5.6 **GetHostIp**: 根据主机名获取主机IP地址
+### 5.6 **GetAvailableHosts**: 获取所有可用的主机列表
+```go
+func GetAvailableHosts() ([]string, error)
+```
+
+### 5.7 **GetHostIp**: 根据主机名获取主机IP地址
 ```go
 func GetHostIp(hostName string) (string, error)
 ```
 
-### 5.7 **CheckHostHealth**: 检查主机的健康状态
+### 5.8 **CheckHostHealth**: 检查主机的健康状态
 ```go
 func CheckHostHealth(hostIpAddress string) (bool, error)
+```
+
+### 5.9 **SelectHostForNewInstance**: 为新实例选择合适的主机
+```go
+func SelectHostForNewInstance(availableHosts []string, service string, version string) (string, error)
+```
+
+### 5.10 **GenerateInstanceID**: 根据服务名生成实例ID
+```go
+func GenerateInstanceID(serviceName string) (string, error)
+```
+
+### 5.11 **GenerateInstanceIP**: 生成实例IP地址
+```go
+func GenerateInstanceIP() (string, error)
+```
+
+### 5.12 **GenerateInstance**: 创建实例
+```go
+func GenerateInstance(instanceID string, instanceIP string) error
 ```
