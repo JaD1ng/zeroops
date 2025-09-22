@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -499,35 +500,33 @@ func (f *floyDeployService) ping(instanceIP, service, fversion, version, message
 func (f *floyDeployService) pushPackage(instanceIP, service, fversion, version string, packageData, md5sum []byte) error {
 	baseURL := fmt.Sprintf("http://%s:%s", instanceIP, f.port)
 
-	// 构造multipart请求体
+	// 使用 multipart.Writer 构造请求体
 	var buf bytes.Buffer
-	boundary := fmt.Sprintf("----floy%d", time.Now().Unix())
+	writer := multipart.NewWriter(&buf)
 
-	// 写入form字段
-	fmt.Fprintf(&buf, "--%s\r\n", boundary)
-	fmt.Fprintf(&buf, "Content-Disposition: form-data; name=\"service\"\r\n\r\n")
-	fmt.Fprintf(&buf, "%s\r\n", service)
+	// 写入表单字段
+	writer.WriteField("service", service)
+	writer.WriteField("fversion", fversion)
+	writer.WriteField("pkgOwner", "qboxserver")
+	writer.WriteField("installDir", "")
 
-	fmt.Fprintf(&buf, "--%s\r\n", boundary)
-	fmt.Fprintf(&buf, "Content-Disposition: form-data; name=\"fversion\"\r\n\r\n")
-	fmt.Fprintf(&buf, "%s\r\n", fversion)
+	// 创建文件字段
+	fileWriter, err := writer.CreateFormFile("file", version)
+	if err != nil {
+		return fmt.Errorf("failed to create form file: %v", err)
+	}
 
-	fmt.Fprintf(&buf, "--%s\r\n", boundary)
-	fmt.Fprintf(&buf, "Content-Disposition: form-data; name=\"pkgOwner\"\r\n\r\n")
-	fmt.Fprintf(&buf, "qboxserver\r\n")
+	// 写入文件数据
+	_, err = fileWriter.Write(packageData)
+	if err != nil {
+		return fmt.Errorf("failed to write file data: %v", err)
+	}
 
-	fmt.Fprintf(&buf, "--%s\r\n", boundary)
-	fmt.Fprintf(&buf, "Content-Disposition: form-data; name=\"installDir\"\r\n\r\n")
-	fmt.Fprintf(&buf, "\r\n")
-
-	// 写入文件
-	fmt.Fprintf(&buf, "--%s\r\n", boundary)
-	fmt.Fprintf(&buf, "Content-Disposition: form-data; name=\"file\"; filename=\"%s\"\r\n", version)
-	fmt.Fprintf(&buf, "Content-Type: application/octet-stream\r\n")
-	fmt.Fprintf(&buf, "Content-Md5: %s\r\n", base64.URLEncoding.EncodeToString(md5sum))
-	fmt.Fprintf(&buf, "\r\n")
-	buf.Write(packageData)
-	fmt.Fprintf(&buf, "\r\n--%s--\r\n", boundary)
+	// 关闭 writer 以完成 multipart 格式
+	err = writer.Close()
+	if err != nil {
+		return fmt.Errorf("failed to close multipart writer: %v", err)
+	}
 
 	// 创建请求
 	req, err := http.NewRequest("POST", baseURL+"/pushPkg", &buf)
@@ -535,7 +534,10 @@ func (f *floyDeployService) pushPackage(instanceIP, service, fversion, version s
 		return fmt.Errorf("failed to create pushPkg request: %v", err)
 	}
 
-	req.Header.Set("Content-Type", fmt.Sprintf("multipart/form-data; boundary=%s", boundary))
+	// 设置 Content-Type，包含自动生成的边界
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// 手动添加 Content-Md5 头
+	req.Header.Set("Content-Md5", base64.URLEncoding.EncodeToString(md5sum))
 
 	// 签名请求
 	if err := f.signRequest(req); err != nil {
@@ -567,36 +569,33 @@ func (f *floyDeployService) pushConfig(instanceIP, service, fversion string) err
 		service, service, fversion)
 	configMD5 := md5.Sum([]byte(configContent))
 
-	// 构造multipart请求体
+	// 使用 multipart.Writer 构造请求体
 	var buf bytes.Buffer
-	boundary := fmt.Sprintf("----floy%d", time.Now().Unix())
+	writer := multipart.NewWriter(&buf)
 
-	// 写入form字段
-	fmt.Fprintf(&buf, "--%s\r\n", boundary)
-	fmt.Fprintf(&buf, "Content-Disposition: form-data; name=\"service\"\r\n\r\n")
-	fmt.Fprintf(&buf, "%s\r\n", service)
+	// 写入表单字段
+	writer.WriteField("service", service)
+	writer.WriteField("fversion", fversion)
+	writer.WriteField("pkgOwner", "qboxserver")
+	writer.WriteField("installDir", "")
 
-	fmt.Fprintf(&buf, "--%s\r\n", boundary)
-	fmt.Fprintf(&buf, "Content-Disposition: form-data; name=\"fversion\"\r\n\r\n")
-	fmt.Fprintf(&buf, "%s\r\n", fversion)
+	// 创建文件字段
+	fileWriter, err := writer.CreateFormFile("file", "app.conf")
+	if err != nil {
+		return fmt.Errorf("failed to create form file: %v", err)
+	}
 
-	fmt.Fprintf(&buf, "--%s\r\n", boundary)
-	fmt.Fprintf(&buf, "Content-Disposition: form-data; name=\"pkgOwner\"\r\n\r\n")
-	fmt.Fprintf(&buf, "qboxserver\r\n")
+	// 写入配置文件内容
+	_, err = fileWriter.Write([]byte(configContent))
+	if err != nil {
+		return fmt.Errorf("failed to write config data: %v", err)
+	}
 
-	fmt.Fprintf(&buf, "--%s\r\n", boundary)
-	fmt.Fprintf(&buf, "Content-Disposition: form-data; name=\"installDir\"\r\n\r\n")
-	fmt.Fprintf(&buf, "\r\n")
-
-	// 写入配置文件
-	fmt.Fprintf(&buf, "--%s\r\n", boundary)
-	fmt.Fprintf(&buf, "Content-Disposition: form-data; name=\"file\"; filename=\"app.conf\"\r\n")
-	fmt.Fprintf(&buf, "Content-Type: application/octet-stream\r\n")
-	fmt.Fprintf(&buf, "Content-Md5: %s\r\n", base64.URLEncoding.EncodeToString(configMD5[:]))
-	fmt.Fprintf(&buf, "File-Mode: 644\r\n")
-	fmt.Fprintf(&buf, "\r\n")
-	fmt.Fprintf(&buf, "%s", configContent)
-	fmt.Fprintf(&buf, "\r\n--%s--\r\n", boundary)
+	// 关闭 writer 以完成 multipart 格式
+	err = writer.Close()
+	if err != nil {
+		return fmt.Errorf("failed to close multipart writer: %v", err)
+	}
 
 	// 创建请求
 	req, err := http.NewRequest("POST", baseURL+"/pushConfig", &buf)
@@ -604,7 +603,11 @@ func (f *floyDeployService) pushConfig(instanceIP, service, fversion string) err
 		return fmt.Errorf("failed to create pushConfig request: %v", err)
 	}
 
-	req.Header.Set("Content-Type", fmt.Sprintf("multipart/form-data; boundary=%s", boundary))
+	// 设置 Content-Type，包含自动生成的边界
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// 手动添加自定义头
+	req.Header.Set("Content-Md5", base64.URLEncoding.EncodeToString(configMD5[:]))
+	req.Header.Set("File-Mode", "644")
 
 	// 签名请求
 	if err := f.signRequest(req); err != nil {
