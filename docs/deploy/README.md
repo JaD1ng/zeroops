@@ -94,7 +94,7 @@ type DeployService interface {
 
 #### 4.1.2 方法说明
 
-**DeployNewService方法**: 在指定主机上部署新服务
+**DeployNewService方法**: 部署新服务并创建指定数量的实例
 
 **DeployNewVersion方法**: 触发指定服务版本的发布操作
 
