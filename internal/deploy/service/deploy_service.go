@@ -319,8 +319,9 @@ func (f *floyDeployService) downloadPackage(packageURL string) (string, []byte, 
 	}
 	tmpFilePath := tmpFile.Name()
 
-	// 下载包文件
-	resp, err := http.Get(packageURL)
+	// 下载包文件（使用带超时的客户端）
+	client := &http.Client{Timeout: 300 * time.Second} // 与 pushPackage 超时保持一致
+	resp, err := client.Get(packageURL)
 	if err != nil {
 		tmpFile.Close()
 		os.Remove(tmpFilePath)
