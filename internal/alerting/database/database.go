@@ -38,3 +38,8 @@ func (d *Database) ExecContext(ctx context.Context, q string, args ...any) (sql.
 func (d *Database) QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error) {
 	return d.db.QueryContext(ctx, q, args...)
 }
+
+// QueryRowContext exposes database/sql QueryRowContext for single row SELECT queries.
+func (d *Database) QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row {
+	return d.db.QueryRowContext(ctx, q, args...)
+}
