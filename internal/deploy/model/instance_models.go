@@ -11,5 +11,5 @@ type InstanceInfo struct {
 // VersionInfo 版本信息
 type VersionInfo struct {
 	Version string `json:"version"` // 版本号
-	Status  string `json:"status"`  // 版本状态 - 'acitve'当前运行版本；'stable'稳定版本；'deprecated'已废弃版本
+	Status  string `json:"status"`  // 版本状态 - 'active'当前运行版本；'stable'稳定版本；'deprecated'已废弃版本
 }
