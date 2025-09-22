@@ -26,8 +26,11 @@ import (
 
 // DeployService 发布服务接口，负责发布和回滚操作的执行
 type DeployService interface {
-	// ExecuteDeployment 触发指定服务版本的发布操作
-	ExecuteDeployment(params *model.DeployParams) (*model.OperationResult, error)
+	// DeployNewService 在指定主机上部署新服务
+	DeployNewService(params *model.DeployNewServiceParams) (*model.OperationResult, error)
+
+	// DeployNewVersion 触发指定服务版本的发布操作
+	DeployNewVersion(params *model.DeployNewVersionParams) (*model.OperationResult, error)
 
 	// ExecuteRollback 对指定实例执行回滚操作，支持单实例或批量实例回滚
 	ExecuteRollback(params *model.RollbackParams) (*model.OperationResult, error)
@@ -101,10 +104,59 @@ func parseRSAPrivateKey(privateKeyPEM string) (*rsa.PrivateKey, error) {
 	return privateKey, nil
 }
 
-// ExecuteDeployment 实现发布操作
-func (f *floyDeployService) ExecuteDeployment(params *model.DeployParams) (*model.OperationResult, error) {
+// DeployNewService 实现新服务部署操作
+func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParams) (*model.OperationResult, error) {
 	// 1. 参数验证
-	if err := f.validateDeployParams(params); err != nil {
+	if err := f.validateDeployNewServiceParams(params); err != nil {
+		return nil, err
+	}
+
+	// 2. 验证包URL
+	if err := ValidatePackageURL(params.PackageURL); err != nil {
+		return nil, err
+	}
+
+	// 3. 检查RSA私钥是否可用
+	if f.rsaPrivateKey == nil {
+		return nil, fmt.Errorf("RSA私钥未正确加载")
+	}
+
+	// 4. 下载包文件
+	packageData, md5sum, err := f.downloadPackage(params.PackageURL)
+	if err != nil {
+		return nil, err
+	}
+
+	// 5. 计算fversion
+	fversion := f.calculateFversion(params.Service, "prod", params.Version)
+
+	// 6. 遍历主机列表，对每个主机执行部署
+	successfulHosts := []string{}
+	for _, hostIP := range params.Hosts {
+		// 对单个主机执行部署
+		if err := f.deployToSingleHost(hostIP, params.Service, params.Version, fversion, packageData, md5sum); err != nil {
+			// 记录错误但继续处理其他主机
+			fmt.Printf("部署到主机 %s 失败: %v\n", hostIP, err)
+			continue
+		}
+		successfulHosts = append(successfulHosts, hostIP)
+	}
+
+	// 7. 构造返回结果
+	result := &model.OperationResult{
+		Service:        params.Service,
+		Version:        params.Version,
+		Instances:      successfulHosts,
+		TotalInstances: len(params.Hosts),
+	}
+
+	return result, nil
+}
+
+// DeployNewVersion 实现发布操作
+func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParams) (*model.OperationResult, error) {
+	// 1. 参数验证
+	if err := f.validateDeployNewVersionParams(params); err != nil {
 		return nil, err
 	}
 
@@ -207,8 +259,28 @@ func (f *floyDeployService) ExecuteRollback(params *model.RollbackParams) (*mode
 	return result, nil
 }
 
-// validateDeployParams 验证发布参数
-func (f *floyDeployService) validateDeployParams(params *model.DeployParams) error {
+// validateDeployNewServiceParams 验证新服务部署参数
+func (f *floyDeployService) validateDeployNewServiceParams(params *model.DeployNewServiceParams) error {
+	if params == nil {
+		return fmt.Errorf("部署参数不能为空")
+	}
+	if params.Service == "" {
+		return fmt.Errorf("服务名称不能为空")
+	}
+	if params.Version == "" {
+		return fmt.Errorf("版本号不能为空")
+	}
+	if len(params.Hosts) == 0 {
+		return fmt.Errorf("主机列表不能为空")
+	}
+	if params.PackageURL == "" {
+		return fmt.Errorf("包URL不能为空")
+	}
+	return nil
+}
+
+// validateDeployNewVersionParams 验证发布参数
+func (f *floyDeployService) validateDeployNewVersionParams(params *model.DeployNewVersionParams) error {
 	if params == nil {
 		return fmt.Errorf("发布参数不能为空")
 	}
@@ -269,6 +341,31 @@ func (f *floyDeployService) calculateFversion(service, env, version string) stri
 	fversion = strings.TrimLeft(fversion, "-_")
 
 	return fversion
+}
+
+// deployToSingleHost 部署到单个主机
+func (f *floyDeployService) deployToSingleHost(hostIP, service, version, fversion string, packageData, md5sum []byte) error {
+	// 1. Ping检查
+	wantPkg, wantConfig, err := f.ping(hostIP, service, fversion, version, "Auto deploy new service")
+	if err != nil {
+		return fmt.Errorf("ping检查失败: %v", err)
+	}
+
+	// 2. 推送包文件
+	if wantPkg {
+		if err := f.pushPackage(hostIP, service, fversion, version, packageData, md5sum); err != nil {
+			return fmt.Errorf("推送包文件失败: %v", err)
+		}
+	}
+
+	// 3. 推送配置文件
+	if wantConfig {
+		if err := f.pushConfig(hostIP, service, fversion); err != nil {
+			return fmt.Errorf("推送配置文件失败: %v", err)
+		}
+	}
+
+	return nil
 }
 
 // deployToSingleInstance 部署到单个实例
