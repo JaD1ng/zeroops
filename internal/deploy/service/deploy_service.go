@@ -125,35 +125,68 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 	// 确保在函数结束时清理临时文件
 	defer os.Remove(packageFilePath)
 
-	// 4. 计算fversion
+	// 4. 计算fversion（暂时不使用，但保留以备将来实现）
 	fversion := f.calculateFversion(params.Service, "prod", params.Version)
 
-	// 5. 遍历主机列表，对每个主机执行部署（单主机容错）
-	successfulHosts := []string{}
-	for _, hostName := range params.Hosts {
-		// 5.1 获取主机IP地址
-		hostIP, err := GetHostIp(hostName)
+	// 5. 获取可用的主机列表
+	availableHosts, err := GetAvailableHosts()
+	if err != nil {
+		return nil, err
+	}
+
+	// 6. 创建指定数量的新服务实例
+	successfulInstances := []string{}
+	for i := 0; i < params.TotalNum; i++ {
+		// 6.1 选择合适的主机
+		selectedHost, err := SelectHostForNewInstance(availableHosts, params.Service, params.Version)
 		if err != nil {
-			// 记录错误但继续处理其他主机
-			fmt.Printf("获取主机 %s 的IP失败: %v\n", hostName, err)
+			// 记录错误但继续处理其他实例
+			fmt.Printf("为实例 %d 选择主机失败: %v\n", i+1, err)
+			continue
+		}
+		// 6.2 获取主机ip
+		hostIP, err := GetHostIp(selectedHost)
+		if err != nil {
+			// 记录错误但继续处理其他实例
+			fmt.Printf("获取主机 %s 的IP失败: %v\n", selectedHost, err)
+			continue
+		}
+		// 6.3 检查主机健康状态
+		healthy, err := CheckHostHealth(hostIP)
+		if err != nil {
+			// 记录错误但继续处理其他实例
+			fmt.Printf("检查主机 %s 健康状态失败: %v\n", hostIP, err)
+			continue
+		}
+		if !healthy {
+			// 记录错误但继续处理其他实例
+			fmt.Printf("主机 %s 健康检查失败\n", hostIP)
+			continue
+		}
+		// 6.4 创建新的instance
+		instanceID, err := GenerateInstanceID(params.Service)
+		if err != nil {
+			// 记录错误但继续处理其他实例
+			fmt.Printf("创建实例 %s 失败: %v\n", params.Service, err)
+			continue
+		}
+		instanceIP := hostIP
+		// 6.5 部署服务到新创建的实例
+		if err := f.deployToSingleInstance(instanceIP, params.Service, params.Version, fversion, packageFilePath, md5sum); err != nil {
+			// 记录错误但继续处理其他实例
+			fmt.Printf("部署到实例 %s (%s) 失败: %v\n", hostIP, hostIP, err)
 			continue
 		}
 
-		// 5.2 对单个主机执行部署
-		if err := f.deployToSingleHost(hostIP, params.Service, params.Version, fversion, packageFilePath, md5sum); err != nil {
-			// 记录错误但继续处理其他主机
-			fmt.Printf("部署到主机 %s (%s) 失败: %v\n", hostName, hostIP, err)
-			continue
-		}
-		successfulHosts = append(successfulHosts, hostName)
+		successfulInstances = append(successfulInstances, instanceID)
 	}
 
 	// 6. 构造返回结果
 	result := &model.OperationResult{
 		Service:        params.Service,
 		Version:        params.Version,
-		Instances:      successfulHosts,
-		TotalInstances: len(params.Hosts),
+		Instances:      successfulInstances,
+		TotalInstances: len(successfulInstances),
 	}
 
 	return result, nil
@@ -308,8 +341,8 @@ func (f *floyDeployService) validateDeployNewServiceParams(params *model.DeployN
 	if params.Version == "" {
 		return fmt.Errorf("版本号不能为空")
 	}
-	if len(params.Hosts) == 0 {
-		return fmt.Errorf("主机列表不能为空")
+	if params.TotalNum <= 0 {
+		return fmt.Errorf("新建实例数量必须大于0")
 	}
 	if params.PackageURL == "" {
 		return fmt.Errorf("包URL不能为空")
@@ -400,31 +433,6 @@ func (f *floyDeployService) calculateFversion(service, env, version string) stri
 	fversion = strings.TrimLeft(fversion, "-_")
 
 	return fversion
-}
-
-// deployToSingleHost 部署到单个主机
-func (f *floyDeployService) deployToSingleHost(hostIP, service, version, fversion string, packageFilePath string, md5sum []byte) error {
-	// 1. Ping检查
-	wantPkg, wantConfig, err := f.ping(hostIP, service, fversion, version, "Auto deploy new service")
-	if err != nil {
-		return fmt.Errorf("ping检查失败: %v", err)
-	}
-
-	// 2. 推送包文件
-	if wantPkg {
-		if err := f.pushPackage(hostIP, service, fversion, version, packageFilePath, md5sum); err != nil {
-			return fmt.Errorf("推送包文件失败: %v", err)
-		}
-	}
-
-	// 3. 推送配置文件
-	if wantConfig {
-		if err := f.pushConfig(hostIP, service, fversion); err != nil {
-			return fmt.Errorf("推送配置文件失败: %v", err)
-		}
-	}
-
-	return nil
 }
 
 // deployToSingleInstance 部署到单个实例

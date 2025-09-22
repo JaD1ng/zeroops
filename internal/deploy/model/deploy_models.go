@@ -2,10 +2,10 @@ package model
 
 // DeployNewServiceParams 部署新服务参数
 type DeployNewServiceParams struct {
-	Service    string   `json:"service"`     // 必填，服务名称
-	Version    string   `json:"version"`     // 必填，目标版本号
-	Hosts      []string `json:"hosts"`       // 必填，主机名称列表
-	PackageURL string   `json:"package_url"` // 必填，包下载URL
+	Service    string `json:"service"`     // 必填，服务名称
+	Version    string `json:"version"`     // 必填，目标版本号
+	TotalNum   int    `json:"totalNum"`    // 必填，新建实例数量
+	PackageURL string `json:"package_url"` // 必填，包下载URL
 }
 
 // DeployNewVersionParams 发布参数
