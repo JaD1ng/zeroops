@@ -65,7 +65,7 @@ type OperationResult struct {
 
 ### 2.3 DeployNewService方法
 
-**方法描述**: 在指定主机上部署新服务
+**方法描述**: 部署新服务并创建指定数量的实例
 
 **方法签名**:
 ```go
