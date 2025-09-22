@@ -12,9 +12,9 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -68,7 +68,7 @@ func NewDeployService() DeployService {
 func loadPrivateKeyFromConfig() string {
 	configPath := filepath.Join("internal", "deploy", "config.yaml")
 
-	data, err := ioutil.ReadFile(configPath)
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return ""
 	}
