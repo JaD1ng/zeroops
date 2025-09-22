@@ -47,15 +47,15 @@ type floyDeployService struct {
 // NewDeployService 创建DeployService实例
 func NewDeployService() DeployService {
 	privateKeyPEM := loadPrivateKeyFromConfig()
+	if privateKeyPEM == "" {
+		panic("deploy service initialization failed: private key not found in config")
+	}
 
 	// 解析RSA私钥
 	rsaPrivateKey, err := parseRSAPrivateKey(privateKeyPEM)
 	if err != nil {
-		// 如果解析失败，返回空的服务实例（实际生产环境应该panic或返回error）
-		return &floyDeployService{
-			privateKey: privateKeyPEM,
-			port:       "9902", // 默认端口
-		}
+		// 快速失败，防止服务在不正确的状态下运行
+		panic(fmt.Sprintf("deploy service initialization failed: invalid RSA private key: %v", err))
 	}
 
 	return &floyDeployService{
@@ -117,24 +117,19 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 		return nil, err
 	}
 
-	// 3. 检查RSA私钥是否可用
-	if f.rsaPrivateKey == nil {
-		return nil, fmt.Errorf("RSA私钥未正确加载")
-	}
-
-	// 4. 下载包文件
+	// 3. 下载包文件
 	packageData, md5sum, err := f.downloadPackage(params.PackageURL)
 	if err != nil {
 		return nil, err
 	}
 
-	// 5. 计算fversion
+	// 4. 计算fversion
 	fversion := f.calculateFversion(params.Service, "prod", params.Version)
 
-	// 6. 遍历主机列表，对每个主机执行部署（单主机容错）
+	// 5. 遍历主机列表，对每个主机执行部署（单主机容错）
 	successfulHosts := []string{}
 	for _, hostName := range params.Hosts {
-		// 6.1 获取主机IP地址
+		// 5.1 获取主机IP地址
 		hostIP, err := GetHostIp(hostName)
 		if err != nil {
 			// 记录错误但继续处理其他主机
@@ -142,7 +137,7 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 			continue
 		}
 
-		// 6.2 对单个主机执行部署
+		// 5.2 对单个主机执行部署
 		if err := f.deployToSingleHost(hostIP, params.Service, params.Version, fversion, packageData, md5sum); err != nil {
 			// 记录错误但继续处理其他主机
 			fmt.Printf("部署到主机 %s (%s) 失败: %v\n", hostName, hostIP, err)
@@ -151,7 +146,7 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 		successfulHosts = append(successfulHosts, hostName)
 	}
 
-	// 7. 构造返回结果
+	// 6. 构造返回结果
 	result := &model.OperationResult{
 		Service:        params.Service,
 		Version:        params.Version,
@@ -174,25 +169,20 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 		return nil, err
 	}
 
-	// 3. 检查RSA私钥是否可用
-	if f.rsaPrivateKey == nil {
-		return nil, fmt.Errorf("RSA私钥未正确加载")
-	}
-
-	// 4. 下载包文件
+	// 3. 下载包文件
 	packageData, md5sum, err := f.downloadPackage(params.PackageURL)
 	if err != nil {
 		return nil, fmt.Errorf("下载包文件失败: %v", err)
 	}
 
-	// 5. 计算fversion
+	// 4. 计算fversion
 	fversion := f.calculateFversion(params.Service, "prod", params.Version)
 
-	// 6. 串行部署到各个实例
+	// 5. 串行部署到各个实例
 	successInstances := []string{}
 	for _, instanceID := range params.Instances {
 
-		// 6.1 检查实例健康状态
+		// 5.1 检查实例健康状态
 		healthy, err := CheckInstanceHealth(instanceID)
 		if err != nil {
 			// 记录错误但继续处理其他实例
@@ -205,7 +195,7 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 			continue
 		}
 
-		// 6.2 获取实例IP
+		// 5.2 获取实例IP
 		instanceIP, err := GetInstanceHost(instanceID)
 		if err != nil {
 			// 记录错误但继续处理其他实例
@@ -213,7 +203,7 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 			continue
 		}
 
-		// 6.3 部署到单个实例
+		// 5.3 部署到单个实例
 		if err := f.deployToSingleInstance(instanceIP, params.Service, params.Version, fversion, packageData, md5sum); err != nil {
 			// 记录错误但继续处理其他实例
 			fmt.Printf("部署到实例 %s (%s) 失败: %v\n", instanceID, instanceIP, err)
@@ -223,7 +213,7 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 		successInstances = append(successInstances, instanceID)
 	}
 
-	// 8. 返回结果
+	// 6. 构造返回结果
 	result := &model.OperationResult{
 		Service:        params.Service,
 		Version:        params.Version,
