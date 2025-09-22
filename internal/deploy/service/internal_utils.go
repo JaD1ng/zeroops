@@ -13,7 +13,7 @@ func GetServiceInstanceIDs(serviceName string, version ...string) ([]string, err
 }
 
 // GetInstanceHost 根据实例ID获取实例的IP地址
-func GetInstanceHost(instanceID string) (string, error) {
+func GetInstanceIP(instanceID string) (string, error) {
 	// TODO: 实现获取实例IP地址逻辑
 	return "", nil
 }

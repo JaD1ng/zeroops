@@ -233,7 +233,7 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 		}
 
 		// 5.2 获取实例IP
-		instanceIP, err := GetInstanceHost(instanceID)
+		instanceIP, err := GetInstanceIP(instanceID)
 		if err != nil {
 			// 记录错误但继续处理其他实例
 			fmt.Printf("获取实例 %s 的IP失败: %v\n", instanceID, err)
@@ -302,7 +302,7 @@ func (f *floyDeployService) ExecuteRollback(params *model.RollbackParams) (*mode
 		}
 
 		// 5.2 获取实例IP
-		instanceIP, err := GetInstanceHost(instanceID)
+		instanceIP, err := GetInstanceIP(instanceID)
 		if err != nil {
 			// 记录错误但继续处理其他实例
 			fmt.Printf("获取实例 %s 的IP失败: %v\n", instanceID, err)
