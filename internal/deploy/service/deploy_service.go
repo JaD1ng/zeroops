@@ -130,16 +130,24 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 	// 5. 计算fversion
 	fversion := f.calculateFversion(params.Service, "prod", params.Version)
 
-	// 6. 遍历主机列表，对每个主机执行部署
+	// 6. 遍历主机列表，对每个主机执行部署（单主机容错）
 	successfulHosts := []string{}
-	for _, hostIP := range params.Hosts {
-		// 对单个主机执行部署
-		if err := f.deployToSingleHost(hostIP, params.Service, params.Version, fversion, packageData, md5sum); err != nil {
+	for _, hostName := range params.Hosts {
+		// 6.1 获取主机IP地址
+		hostIP, err := GetHostIp(hostName)
+		if err != nil {
 			// 记录错误但继续处理其他主机
-			fmt.Printf("部署到主机 %s 失败: %v\n", hostIP, err)
+			fmt.Printf("获取主机 %s 的IP失败: %v\n", hostName, err)
 			continue
 		}
-		successfulHosts = append(successfulHosts, hostIP)
+
+		// 6.2 对单个主机执行部署
+		if err := f.deployToSingleHost(hostIP, params.Service, params.Version, fversion, packageData, md5sum); err != nil {
+			// 记录错误但继续处理其他主机
+			fmt.Printf("部署到主机 %s (%s) 失败: %v\n", hostName, hostIP, err)
+			continue
+		}
+		successfulHosts = append(successfulHosts, hostName)
 	}
 
 	// 7. 构造返回结果
@@ -186,21 +194,29 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 		// 6.1 检查实例健康状态
 		healthy, err := CheckInstanceHealth(instanceID)
 		if err != nil {
-			return nil, fmt.Errorf("实例 %s 健康检查失败: %v", instanceID, err)
+			// 记录错误但继续处理其他实例
+			fmt.Printf("实例 %s 健康检查失败: %v\n", instanceID, err)
+			continue
 		}
 		if !healthy {
-			return nil, fmt.Errorf("实例 %s 健康检查失败", instanceID)
+			// 记录错误但继续处理其他实例
+			fmt.Printf("实例 %s 健康检查失败\n", instanceID)
+			continue
 		}
 
 		// 6.2 获取实例IP
 		instanceIP, err := GetInstanceHost(instanceID)
 		if err != nil {
-			return nil, fmt.Errorf("获取实例 %s 的IP失败: %v", instanceID, err)
+			// 记录错误但继续处理其他实例
+			fmt.Printf("获取实例 %s 的IP失败: %v\n", instanceID, err)
+			continue
 		}
 
 		// 6.3 部署到单个实例
 		if err := f.deployToSingleInstance(instanceIP, params.Service, params.Version, fversion, packageData, md5sum); err != nil {
-			return nil, fmt.Errorf("部署到实例 %s (%s) 失败: %v", instanceID, instanceIP, err)
+			// 记录错误但继续处理其他实例
+			fmt.Printf("部署到实例 %s (%s) 失败: %v\n", instanceID, instanceIP, err)
+			continue
 		}
 
 		successInstances = append(successInstances, instanceID)
