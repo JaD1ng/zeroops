@@ -219,8 +219,21 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 	successInstances := []string{}
 	for _, instanceID := range params.Instances {
 
-		// 5.1 检查实例健康状态
-		healthy, err := CheckInstanceHealth(instanceID)
+		// 5.1 获取实例IP和端口
+		instanceIP, err := GetInstanceIP(instanceID)
+		if err != nil {
+			fmt.Printf("获取实例 %s IP失败: %v\n", instanceID, err)
+			continue
+		}
+
+		instancePort, err := GetInstancePort(instanceID)
+		if err != nil {
+			fmt.Printf("获取实例 %s 端口失败: %v\n", instanceID, err)
+			continue
+		}
+
+		// 5.2 检查实例健康状态
+		healthy, err := CheckInstanceHealth(instanceIP, instancePort)
 		if err != nil {
 			// 记录错误但继续处理其他实例
 			fmt.Printf("实例 %s 健康检查失败: %v\n", instanceID, err)
@@ -228,15 +241,7 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 		}
 		if !healthy {
 			// 记录错误但继续处理其他实例
-			fmt.Printf("实例 %s 健康检查失败\n", instanceID)
-			continue
-		}
-
-		// 5.2 获取实例IP
-		instanceIP, err := GetInstanceIP(instanceID)
-		if err != nil {
-			// 记录错误但继续处理其他实例
-			fmt.Printf("获取实例 %s 的IP失败: %v\n", instanceID, err)
+			fmt.Printf("实例 %s (IP: %s, Port: %d) 健康检查失败\n", instanceID, instanceIP, instancePort)
 			continue
 		}
 
@@ -288,8 +293,21 @@ func (f *floyDeployService) ExecuteRollback(params *model.RollbackParams) (*mode
 	successInstances := []string{}
 	for _, instanceID := range params.Instances {
 
-		// 5.1 检查实例健康状态
-		healthy, err := CheckInstanceHealth(instanceID)
+		// 5.1 获取实例IP和端口
+		instanceIP, err := GetInstanceIP(instanceID)
+		if err != nil {
+			fmt.Printf("获取实例 %s IP失败: %v\n", instanceID, err)
+			continue
+		}
+
+		instancePort, err := GetInstancePort(instanceID)
+		if err != nil {
+			fmt.Printf("获取实例 %s 端口失败: %v\n", instanceID, err)
+			continue
+		}
+
+		// 5.2 检查实例健康状态
+		healthy, err := CheckInstanceHealth(instanceIP, instancePort)
 		if err != nil {
 			// 记录错误但继续处理其他实例
 			fmt.Printf("实例 %s 健康检查失败: %v\n", instanceID, err)
@@ -297,15 +315,7 @@ func (f *floyDeployService) ExecuteRollback(params *model.RollbackParams) (*mode
 		}
 		if !healthy {
 			// 记录错误但继续处理其他实例
-			fmt.Printf("实例 %s 健康检查失败\n", instanceID)
-			continue
-		}
-
-		// 5.2 获取实例IP
-		instanceIP, err := GetInstanceIP(instanceID)
-		if err != nil {
-			// 记录错误但继续处理其他实例
-			fmt.Printf("获取实例 %s 的IP失败: %v\n", instanceID, err)
+			fmt.Printf("实例 %s (IP: %s, Port: %d) 健康检查失败\n", instanceID, instanceIP, instancePort)
 			continue
 		}
 
