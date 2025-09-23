@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"math/rand"
 	"net"
 	"os/exec"
 	"strconv"
@@ -198,14 +199,41 @@ func CheckHostHealth(hostIpAddress string) (bool, error) {
 
 // SelectHostForNewInstance 为新实例选择合适的主机
 func SelectHostForNewInstance(availableHosts []*model.HostInfo, service string, version string) (*model.HostInfo, error) {
-	// TODO: 实现主机选择逻辑
-	return nil, nil
+	// 参数验证
+	if len(availableHosts) == 0 {
+		return nil, fmt.Errorf("no available hosts")
+	}
+
+	// 随机选择一个主机
+	randomIndex := rand.Intn(len(availableHosts))
+	selectedHost := availableHosts[randomIndex]
+
+	return selectedHost, nil
 }
 
 // GenerateInstanceID 根据服务名生成实例ID
 func GenerateInstanceID(serviceName string) (string, error) {
-	// TODO: 实现实例ID生成逻辑
-	return "", nil
+	// 参数验证
+	if serviceName == "" {
+		return "", fmt.Errorf("serviceName cannot be empty")
+	}
+
+	// 生成时间戳（Unix时间戳）
+	timestamp := time.Now().Unix()
+
+	// 生成6位随机字符串
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	const randomLength = 6
+	randomBytes := make([]byte, randomLength)
+	for i := range randomBytes {
+		randomBytes[i] = charset[rand.Intn(len(charset))]
+	}
+	randomString := string(randomBytes)
+
+	// 组合生成实例ID：serviceName-timestamp-randomString
+	instanceID := fmt.Sprintf("%s-%d-%s", serviceName, timestamp, randomString)
+
+	return instanceID, nil
 }
 
 // GenerateInstanceIP 生成实例IP地址
