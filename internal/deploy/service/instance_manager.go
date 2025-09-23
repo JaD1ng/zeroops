@@ -10,3 +10,18 @@ type InstanceManager interface {
 	// GetInstanceVersionHistory 获取指定实例的版本历史记录
 	GetInstanceVersionHistory(instanceID string) ([]*model.VersionInfo, error)
 }
+
+type floyInstanceService struct {
+}
+
+func NewFloyInstanceService() InstanceManager {
+	return &floyInstanceService{}
+}
+
+func (f *floyInstanceService) GetServiceInstances(serviceName string, version ...string) ([]*model.InstanceInfo, error) {
+	return nil, nil
+}
+
+func (f *floyInstanceService) GetInstanceVersionHistory(instanceID string) ([]*model.VersionInfo, error) {
+	return nil, nil
+}
