@@ -120,10 +120,10 @@ type InstanceManager interface {
 **InstanceInfo结构体**:
 ```go
 type InstanceInfo struct {
-    InstanceID  string `json:"instance_id"`  // 实例唯一标识符
-    ServiceName string `json:"service_name"` // 所属服务名称
-    Version     string `json:"version"`      // 当前运行的版本号
-    Status      string `json:"status"`       // 实例运行状态 - 'active'运行中；'pending'发布中；'error'出现故障
+    InstanceID     string `json:"instance_id"`     // 实例唯一标识符
+    ServiceName    string `json:"service_name"`   // 所属服务名称
+    ServiceVersion string `json:"service_version"` // 当前运行的版本号
+    Status         string `json:"status"`          // 实例运行状态 - 'active'运行中；'pending'发布中；'error'出现故障
 }
 ```
 
@@ -187,13 +187,13 @@ packageURL string // 必填，包下载URL
 
 **返回结果**: `error` - 验证失败时返回错误信息
 
-### 4.2 GetServiceInstanceIDs函数
+### 4.2 GetServiceInstanceInfos函数
 
-**函数描述**: 根据服务名和版本获取实例ID列表，用于内部批量操作
+**函数描述**: 根据服务名和版本获取实例信息列表，用于内部批量操作
 
 **函数签名**:
 ```go
-func GetServiceInstanceIDs(serviceName string, version ...string) ([]string, error)
+func GetServiceInstanceInfos(serviceName string, version ...string) ([]*InstanceInfo, error)
 ```
 
 **输入参数**:
@@ -202,7 +202,7 @@ serviceName string   // 必填，服务名称
 version     ...string // 选填，指定版本号进行过滤，未输入则默认获取全部版本的运行实例
 ```
 
-**返回结果**: `[]string` - 实例ID数组
+**返回结果**: `[]*InstanceInfo` - 实例信息数组
 
 ### 4.3 GetInstanceIP函数
 

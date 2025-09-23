@@ -126,9 +126,9 @@ type InstanceManager interface {
 func ValidatePackageURL(packageURL string) error
 ```
 
-### 5.2 **GetServiceInstanceIDs**: 根据服务名和版本获取实例ID列表
+### 5.2 **GetServiceInstanceInfos**: 根据服务名和版本获取实例信息列表
 ```go
-func GetServiceInstanceIDs(serviceName string, version ...string) ([]string, error)
+func GetServiceInstanceInfos(serviceName string, version ...string) ([]*InstanceInfo, error)
 ```
 
 ### 5.3 **GetInstanceIP**: 根据实例ID获取实例的IP地址

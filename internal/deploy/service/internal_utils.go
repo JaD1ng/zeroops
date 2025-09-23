@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"github.com/qiniu/zeroops/internal/deploy/model"
 	"net"
 	"strconv"
 	"sync"
@@ -46,8 +47,8 @@ func ValidatePackageURL(packageURL string) error {
 	return nil
 }
 
-// GetServiceInstanceIDs 根据服务名和版本获取实例ID列表，用于内部批量操作
-func GetServiceInstanceIDs(serviceName string, version ...string) ([]string, error) {
+// GetServiceInstanceInfos 根据服务名和版本获取实例ID列表，用于内部批量操作
+func GetServiceInstanceInfos(serviceName string, version ...string) ([]*model.InstanceInfo, error) {
 	// TODO: 实现获取实例ID列表逻辑
 	return nil, nil
 }
