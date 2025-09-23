@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -24,6 +25,12 @@ import (
 	"github.com/qiniu/zeroops/internal/deploy/model"
 	"gopkg.in/yaml.v3"
 )
+
+// PingResponse ping响应结构
+type PingResponse struct {
+	WantPkg    bool `json:"pkg"`
+	WantConfig bool `json:"config"`
+}
 
 // DeployService 发布服务接口，负责发布和回滚操作的执行
 type DeployService interface {
@@ -174,6 +181,8 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 			continue
 		}
 
+		// TODO: 将实例信息添加到数据库
+
 		successfulInstances = append(successfulInstances, instanceID)
 	}
 
@@ -247,6 +256,8 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 			fmt.Printf("部署到实例 %s (%s) 失败: %v\n", instanceID, instanceIP, err)
 			continue
 		}
+
+		// TODO: 将实例信息添加到数据库
 
 		successInstances = append(successInstances, instanceID)
 	}
@@ -322,6 +333,8 @@ func (f *floyDeployService) ExecuteRollback(params *model.RollbackParams) (*mode
 			continue
 		}
 
+		// TODO: 将实例信息添加到数据库
+
 		successInstances = append(successInstances, instanceID)
 	}
 
@@ -376,8 +389,18 @@ func (f *floyDeployService) validateDeployNewVersionParams(params *model.DeployN
 	return nil
 }
 
-// downloadPackage 流式下载包文件到临时文件
+// downloadPackage 下载包文件到临时文件，支持HTTP URL和本地路径
 func (f *floyDeployService) downloadPackage(packageURL string) (string, []byte, error) {
+	// 检测是否为HTTP URL
+	if strings.HasPrefix(packageURL, "http://") || strings.HasPrefix(packageURL, "https://") {
+		return f.downloadFromHTTP(packageURL)
+	} else {
+		return f.copyFromLocal(packageURL)
+	}
+}
+
+// downloadFromHTTP 从HTTP URL下载包文件
+func (f *floyDeployService) downloadFromHTTP(packageURL string) (string, []byte, error) {
 	// 创建临时文件
 	tmpFile, err := os.CreateTemp("", "deploy-package-*.tmp")
 	if err != nil {
@@ -410,6 +433,51 @@ func (f *floyDeployService) downloadPackage(packageURL string) (string, []byte, 
 		tmpFile.Close()
 		os.Remove(tmpFilePath)
 		return "", nil, fmt.Errorf("failed to write package data: %v", err)
+	}
+
+	// 关闭文件
+	err = tmpFile.Close()
+	if err != nil {
+		os.Remove(tmpFilePath)
+		return "", nil, fmt.Errorf("failed to close temp file: %v", err)
+	}
+
+	md5sum := h.Sum(nil)
+	return tmpFilePath, md5sum, nil
+}
+
+// copyFromLocal 从本地路径复制包文件
+func (f *floyDeployService) copyFromLocal(filePath string) (string, []byte, error) {
+	// 检查文件是否存在
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return "", nil, fmt.Errorf("local file not found: %s", filePath)
+	}
+
+	// 创建临时文件
+	tmpFile, err := os.CreateTemp("", "deploy-package-*.tmp")
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create temp file: %v", err)
+	}
+	tmpFilePath := tmpFile.Name()
+
+	// 打开源文件
+	srcFile, err := os.Open(filePath)
+	if err != nil {
+		tmpFile.Close()
+		os.Remove(tmpFilePath)
+		return "", nil, fmt.Errorf("failed to open local file: %v", err)
+	}
+	defer srcFile.Close()
+
+	// 复制文件并计算MD5
+	h := md5.New()
+	multiWriter := io.MultiWriter(tmpFile, h)
+
+	_, err = io.Copy(multiWriter, srcFile)
+	if err != nil {
+		tmpFile.Close()
+		os.Remove(tmpFilePath)
+		return "", nil, fmt.Errorf("failed to copy file data: %v", err)
 	}
 
 	// 关闭文件
@@ -463,6 +531,11 @@ func (f *floyDeployService) deployToSingleInstance(instanceIP, service, version,
 		}
 	}
 
+	// 4. 切换版本（激活新版本）
+	if err := f.switchVersion(instanceIP, service, fversion, false); err != nil {
+		return fmt.Errorf("版本切换失败: %v", err)
+	}
+
 	return nil
 }
 
@@ -488,6 +561,11 @@ func (f *floyDeployService) rollbackToSingleInstance(instanceIP, service, target
 		}
 	}
 
+	// 4. 切换版本（激活回滚版本）
+	if err := f.switchVersion(instanceIP, service, fversion, false); err != nil {
+		return fmt.Errorf("版本切换失败: %v", err)
+	}
+
 	return nil
 }
 
@@ -507,11 +585,11 @@ func (f *floyDeployService) signRequest(req *http.Request) error {
 	// 生成时间戳
 	timestamp := strconv.FormatInt(time.Now().UnixNano(), 10)
 
-	// 计算签名内容：请求体 + 时间戳 + URI
+	// 计算签名内容：请求体 + URI + 时间戳（修正顺序）
 	sh := crypto.SHA1.New()
 	sh.Write(bodyBytes)
-	sh.Write([]byte(timestamp))
 	sh.Write([]byte(req.URL.RequestURI()))
+	sh.Write([]byte(timestamp))
 	hash := sh.Sum(nil)
 
 	// RSA签名
@@ -572,9 +650,13 @@ func (f *floyDeployService) ping(instanceIP, service, fversion, version, message
 		return false, false, fmt.Errorf("ping failed: status %d, body: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	// 简化处理：假设总是需要推送包和配置
-	// 实际应该解析JSON响应
-	return true, true, nil
+	// 解析JSON响应
+	var pingResp PingResponse
+	if err := json.NewDecoder(resp.Body).Decode(&pingResp); err != nil {
+		return false, false, fmt.Errorf("failed to decode ping response: %v", err)
+	}
+
+	return pingResp.WantPkg, pingResp.WantConfig, nil
 }
 
 // pushPackage 推送包文件
@@ -713,6 +795,54 @@ func (f *floyDeployService) pushConfig(instanceIP, service, fversion string) err
 	if resp.StatusCode != 200 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("pushConfig failed: status %d, body: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	return nil
+}
+
+// switchVersion 切换版本
+func (f *floyDeployService) switchVersion(instanceIP, service, fversion string, force bool) error {
+	baseURL := fmt.Sprintf("http://%s:%s", instanceIP, f.port)
+
+	// 构造请求参数
+	params := url.Values{}
+	params.Add("service", service)
+	params.Add("fversion", fversion)
+	params.Add("pkgOwner", "qboxserver")
+	params.Add("installDir", "")
+	if force {
+		params.Add("force", "1")
+	}
+
+	// 创建请求
+	req, err := http.NewRequest("POST", baseURL+"/switch", strings.NewReader(params.Encode()))
+	if err != nil {
+		return fmt.Errorf("failed to create switch request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	// 签名请求
+	if err := f.signRequest(req); err != nil {
+		return fmt.Errorf("failed to sign switch request: %v", err)
+	}
+
+	// 发送请求
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send switch request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 202 {
+		// Nothing to do
+		return nil
+	}
+
+	if resp.StatusCode != 200 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("switch failed: status %d, body: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	return nil
