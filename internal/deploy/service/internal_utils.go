@@ -17,6 +17,7 @@ import (
 var (
 	dbInstance   *database.Database
 	instanceRepo *database.InstanceRepo
+	hostRepo     *database.HostRepo
 	dbOnce       sync.Once
 	dbErr        error
 )
@@ -38,6 +39,9 @@ func initDatabase() (*database.Database, error) {
 
 		// 初始化实例仓库
 		instanceRepo = database.NewInstanceRepo(dbInstance)
+
+		// 初始化主机仓库
+		hostRepo = database.NewHostRepo(dbInstance)
 	})
 
 	return dbInstance, dbErr
@@ -154,9 +158,20 @@ func CheckInstanceHealth(instanceIP string, instancePort int) (bool, error) {
 	return true, nil // 连接成功，实例健康
 }
 
-func GetAvailableHosts() ([]model.HostInfo, error) {
-	// TODO: 实现获取可用主机逻辑
-	return nil, nil
+func GetAvailableHostInfos() ([]*model.HostInfo, error) {
+	// 获取数据库连接
+	_, err := initDatabase()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize database connection: %w", err)
+	}
+
+	// 查询可用主机信息列表
+	hostInfos, err := hostRepo.GetAvailableHostInfos()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get available host infos: %w", err)
+	}
+
+	return hostInfos, nil
 }
 
 // CheckHostHealth 判断主机运行状态
@@ -182,7 +197,7 @@ func CheckHostHealth(hostIpAddress string) (bool, error) {
 }
 
 // SelectHostForNewInstance 为新实例选择合适的主机
-func SelectHostForNewInstance(availableHosts []model.HostInfo, service string, version string) (*model.HostInfo, error) {
+func SelectHostForNewInstance(availableHosts []*model.HostInfo, service string, version string) (*model.HostInfo, error) {
 	// TODO: 实现主机选择逻辑
 	return nil, nil
 }

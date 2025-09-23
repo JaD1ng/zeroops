@@ -129,7 +129,7 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 	fversion := f.calculateFversion(params.Service, "prod", params.Version)
 
 	// 5. 获取可用的主机列表
-	availableHosts, err := GetAvailableHosts()
+	availableHosts, err := GetAvailableHostInfos()
 	if err != nil {
 		return nil, err
 	}
