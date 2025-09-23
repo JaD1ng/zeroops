@@ -1,97 +1,70 @@
-# Prometheus Adapter 模块文档
+# Prometheus Adapter
+
+基于 Prometheus 的指标查询与告警规则同步适配层，提供统一的 REST API：
+- 按服务与版本查询任意 Prometheus 指标
+- 同步告警规则到 Prometheus 并触发重载
+
+目录
+- 概述
+- 快速开始
+- 架构设计
+- API 参考
+  - 指标查询
+  - 告警规则同步
+- Alertmanager 集成
+- 支持的服务
+- 错误码
 
 ## 概述
 
-Prometheus Adapter 提供从 Prometheus 获取服务指标的 RESTful API 接口。支持按服务名称和版本进行查询。
+Prometheus Adapter 作为内部系统与 Prometheus 之间的适配层：
+- 向上暴露简洁、统一的 HTTP API
+- 向下负责 PromQL 查询与 Prometheus 规则文件管理
 
 ## 架构设计
 
-### 模块结构
+- 分层设计
+  - API 层（`internal/prometheus_adapter/api`）：HTTP 请求处理、参数校验、错误格式化
+  - Service 层（`internal/prometheus_adapter/service`）：业务逻辑、指标与服务存在性校验、数据装配
+  - Client 层（`internal/prometheus_adapter/client`）：与 Prometheus API 交互、PromQL 构建、结果转换
+  - Model 层（`internal/prometheus_adapter/model`）：统一数据模型、错误类型、常量
 
+- 目录结构
 ```
 internal/prometheus_adapter/
-├── server.go           # 服务器主入口，负责初始化和生命周期管理
-├── api/                # API 层，处理 HTTP 请求
-│   ├── api.go         # API 基础结构和初始化
-│   └── metric_api.go  # 指标相关的 API 处理器
-├── service/            # 业务逻辑层
-│   └── metric_service.go  # 指标查询服务实现
-├── client/             # Prometheus 客户端
+├── server.go              # 服务器主入口，负责初始化和生命周期管理
+├── api/                   # API 层，处理 HTTP 请求
+│   ├── api.go            # API 基础结构和初始化
+│   ├── metric_api.go     # 指标相关的 API 处理器
+│   └── alert_api.go      # 告警规则同步 API 处理器
+├── service/               # 业务逻辑层
+│   ├── metric_service.go # 指标查询服务实现
+│   └── alert_service.go  # 告警规则同步服务实现
+├── client/                # Prometheus 客户端
 │   └── prometheus_client.go  # 封装 Prometheus API 调用
-└── model/              # 数据模型
-    ├── api.go         # API 请求响应模型
-    ├── constants.go   # 常量定义（错误码等）
-    └── error.go       # 错误类型定义
+└── model/                 # 数据模型
+    ├── api.go            # API 请求响应模型
+    ├── alert.go          # 告警规则模型
+    ├── constants.go      # 常量定义（错误码等）
+    ├── error.go          # 错误类型定义
+    └── prometheus.go     # Prometheus 规则文件模型
 ```
 
-### 层次设计
+- 核心组件
+  - PrometheusAdapterServer：初始化客户端与路由，管理服务生命周期
+  - PrometheusClient：`QueryRange`、`GetAvailableMetrics`、`CheckMetricExists`、`CheckServiceExists`、`BuildQuery`
+  - MetricService：参数校验、动态指标发现、错误转换
+  - AlertService：告警规则同步、Prometheus 规则文件生成、配置重载
 
-1. **API 层** (`api/`)
-   - 处理 HTTP 请求和响应
-   - 参数验证和解析
-   - 错误响应格式化
+## API 
 
-2. **Service 层** (`service/`)
-   - 业务逻辑处理
-   - 指标和服务存在性验证
-   - 数据转换和组装
+### 指标查询
 
-3. **Client 层** (`client/`)
-   - 与 Prometheus API 交互
-   - PromQL 查询构建
-   - 结果数据转换
-
-4. **Model 层** (`model/`)
-   - 统一的数据模型定义
-   - 错误类型和错误码
-   - 请求响应结构体
-
-### 核心组件
-
-#### PrometheusAdapterServer
-主服务器组件，负责：
-- 初始化 Prometheus 客户端
-- 创建服务实例
-- 设置 API 路由
-- 管理生命周期
-
-#### PrometheusClient
-Prometheus 客户端封装，提供：
-- `QueryRange`: 执行时间范围查询
-- `GetAvailableMetrics`: 获取所有可用指标
-- `CheckMetricExists`: 检查指标是否存在
-- `CheckServiceExists`: 检查服务是否存在
-- `BuildQuery`: 构建 PromQL 查询语句
-
-#### MetricService
-业务逻辑服务，实现：
-- 动态指标发现
-- 查询参数验证
-- 错误处理和转换
-
-## 配置说明
-
-### 环境变量
-
-| 变量名 | 说明 | 默认值 |
-|--------|------|--------|
-| PROMETHEUS_ADDRESS | Prometheus 服务器地址 | http://10.210.10.33:9090 |
-
-## API
-
-### 1. 获取可用指标列表
-
-**GET** `/v1/metrics`
-
-获取所有可用的指标列表。
-
-#### 请求示例
-```bash
-GET /v1/metrics
+1) 获取可用指标列表
+- 方法与路径：`GET /v1/metrics`
+- 用途：列出当前可查询的所有指标名称
+- 响应示例：
 ```
-
-#### 响应示例
-```json
 {
   "metrics": [
     "system_cpu_usage_percent",
@@ -104,69 +77,36 @@ GET /v1/metrics
 }
 ```
 
-### 2. 通用指标查询接口
-
-**GET** `/v1/metrics/:service/:metric`
-
-获取指定服务的任意指标时间序列数据。指标不存在则返回错误。
-
-#### 路径参数
-- `service` (string, required): 服务名称
-- `metric` (string, required): 指标名称（必须是 Prometheus 中实际存在的指标）
-
-#### 查询参数
-- `version` (string, optional): 服务版本，不指定则返回所有版本
-- `start` (string, optional): 开始时间 (RFC3339 格式，如: 2024-01-01T00:00:00Z)
-- `end` (string, optional): 结束时间 (RFC3339 格式，如: 2024-01-01T01:00:00Z)
-- `step` (string, optional): 时间步长 (如: 1m, 5m, 1h)，默认 1m
-
-#### 请求示例
-
-1. **查询 CPU 使用率：**
-```bash
-GET /v1/metrics/metadata-service/system_cpu_usage_percent?version=1.0.0
+2) 查询指定服务的指标时间序列
+- 方法与路径：`GET /v1/metrics/{service}/{metric}`
+- 路径参数：
+  - `service`：服务名（必填）
+  - `metric`：指标名（必填，需为 Prometheus 中存在的指标）
+- 查询参数：
+  - `version`：服务版本（选填；不传则返回所有版本）
+  - `start`：开始时间（选填，RFC3339）
+  - `end`：结束时间（选填，RFC3339）
+  - `step`：步长（选填，如 `1m`、`5m`、`1h`；默认 `1m`）
+- 请求示例：
+  - `GET /v1/metrics/metadata-service/system_cpu_usage_percent?version=1.0.0`
+  - `GET /v1/metrics/storage-service/system_memory_usage_percent?version=1.0.0`
+  - `GET /v1/metrics/storage-service/http_latency?version=1.0.0`
+  - `GET /v1/metrics/storage-service/system_network_qps?version=1.0.0`
+- 成功响应示例：
 ```
-
-2. **查询内存使用率：**
-```bash
-GET /v1/metrics/storage-service/system_memory_usage_percent?version=1.0.0
-```
-
-3. **查询 HTTP 请求延迟：**
-```bash
-GET /v1/metrics/storage-service/http_latency?version=1.0.0
-```
-
-4. **查询网络 QPS：**
-```bash
-GET /v1/metrics/storage-service/system_network_qps?version=1.0.0
-```
-
-#### 成功响应示例
-
-**HTTP 200 OK**
-```json
 {
   "service": "metadata-service",
   "version": "1.0.0",
   "metric": "system_cpu_usage_percent",
   "data": [
-    {
-      "timestamp": "2024-01-01T00:00:00Z",
-      "value": 45.2
-    },
-    {
-      "timestamp": "2024-01-01T00:01:00Z",
-      "value": 48.5
-    }
+    { "timestamp": "2024-01-01T00:00:00Z", "value": 45.2 },
+    { "timestamp": "2024-01-01T00:01:00Z", "value": 48.5 }
   ]
 }
 ```
-
-#### 错误响应示例
-
-**指标不存在时 - HTTP 404 Not Found**
-```json
+- 错误响应示例：
+  - 指标不存在（404）：
+```
 {
   "error": {
     "code": "METRIC_NOT_FOUND",
@@ -175,9 +115,8 @@ GET /v1/metrics/storage-service/system_network_qps?version=1.0.0
   }
 }
 ```
-
-**服务不存在时 - HTTP 404 Not Found**
-```json
+  - 服务不存在（404）：
+```
 {
   "error": {
     "code": "SERVICE_NOT_FOUND",
@@ -186,9 +125,8 @@ GET /v1/metrics/storage-service/system_network_qps?version=1.0.0
   }
 }
 ```
-
-**参数错误时 - HTTP 400 Bad Request**
-```json
+  - 参数错误（400）：
+```
 {
   "error": {
     "code": "INVALID_PARAMETER",
@@ -199,15 +137,81 @@ GET /v1/metrics/storage-service/system_network_qps?version=1.0.0
 }
 ```
 
-## 实现说明
+### 告警规则同步
 
-### 支持的服务列表
+- 方法与路径：`POST /v1/alert-rules/sync`
+- 功能：接收监控告警模块发送的完整规则列表，生成 Prometheus 规则文件并触发重载（全量同步）
+- 请求体示例：
+```
+{
+  "rules": [
+    {
+      "name": "high_cpu_usage",
+      "description": "CPU使用率过高告警",
+      "expr": "system_cpu_usage_percent",
+      "op": ">",
+      "severity": "warning"
+    }
+  ],
+  "rule_metas": [
+    {
+      "alert_name": "high_cpu_usage_storage_v1",
+      "labels": "{\"service\":\"storage-service\",\"version\":\"1.0.0\"}",
+      "threshold": 90,
+      "watch_time": 300,
+      "match_time": "5m"
+    }
+  ]
+}
+```
+- 响应示例：
+```
+{
+  "status": "success",
+  "message": "Rules synced to Prometheus"
+}
+```
 
-当前 mock/s3 环境中支持的服务：
-- `metadata-service` - 元数据管理服务
-- `storage-service` - 存储服务
-- `queue-service` - 消息队列服务
-- `third-party-service` - 第三方集成服务
-- `mock-error-service` - 错误模拟服务
+## Alertmanager 集成
 
-所有服务的版本信息通过 `service_version` 标签暴露。
+- 目标：将 Prometheus 触发的告警通过 Alertmanager 转发到监控告警模块
+- `alertmanager.yml` 配置示例：
+```yaml
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'zeroops-alert-webhook'
+
+receivers:
+  - name: 'zeroops-alert-webhook'
+    webhook_configs:
+      - url: 'http://alert-module:8080/v1/integrations/alertmanager/webhook'
+        send_resolved: true
+```
+- 说明：
+  - `url`：监控告警模块的 webhook 地址（按实际部署修改主机与端口）
+  - `send_resolved`：为 `true` 时，告警恢复也会通知
+
+## 支持的服务
+
+当前 mock/s3 环境下：
+- `metadata-service`
+- `storage-service`
+- `queue-service`
+- `third-party-service`（原文为 third-party-servrice，已更正）
+- `mock-error-service`
+
+所有服务的版本信息通过标签 `service_version` 暴露。
+
+## 错误码
+
+- `METRIC_NOT_FOUND`：指标不存在
+- `SERVICE_NOT_FOUND`：服务不存在
+- `INVALID_PARAMETER`：请求参数不合法（如时间格式不正确）
+- `INTERNAL_ERROR`：内部服务器错误
+- `PROMETHEUS_ERROR`：Prometheus 查询失败

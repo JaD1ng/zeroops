@@ -17,6 +17,7 @@ type PrometheusAdapterServer struct {
 	config        *config.Config
 	promClient    *client.PrometheusClient
 	metricService *service.MetricService
+	alertService  *service.AlertService
 	api           *api.Api
 }
 
@@ -37,10 +38,14 @@ func NewPrometheusAdapterServer(cfg *config.Config) (*PrometheusAdapterServer, e
 	// 创建指标服务
 	metricService := service.NewMetricService(promClient)
 
+	// 创建告警服务
+	alertService := service.NewAlertService(promClient)
+
 	server := &PrometheusAdapterServer{
 		config:        cfg,
 		promClient:    promClient,
 		metricService: metricService,
+		alertService:  alertService,
 	}
 
 	log.Info().Str("prometheus_address", prometheusAddr).Msg("Prometheus Adapter initialized successfully")
@@ -50,10 +55,11 @@ func NewPrometheusAdapterServer(cfg *config.Config) (*PrometheusAdapterServer, e
 // UseApi 设置 API 路由
 func (s *PrometheusAdapterServer) UseApi(router *fox.Engine) error {
 	var err error
-	s.api, err = api.NewApi(s.metricService, router)
+	s.api, err = api.NewApi(s.metricService, s.alertService, router)
 	if err != nil {
 		return fmt.Errorf("failed to initialize API: %w", err)
 	}
+
 	return nil
 }
 
