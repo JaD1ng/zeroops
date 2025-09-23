@@ -25,7 +25,7 @@ func NewPrometheusAdapterServer(cfg *config.Config) (*PrometheusAdapterServer, e
 	// 使用环境变量或默认值获取 Prometheus 地址
 	prometheusAddr := os.Getenv("PROMETHEUS_ADDRESS")
 	if prometheusAddr == "" {
-		prometheusAddr = "http://localhost:9090"
+		prometheusAddr = "http://10.210.10.33:9090/"
 	}
 
 	// 创建 Prometheus 客户端

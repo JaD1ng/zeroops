@@ -1,8 +1,81 @@
-# Prometheus Adapter API 文档
+# Prometheus Adapter 模块文档
 
 ## 概述
 
 Prometheus Adapter 提供从 Prometheus 获取服务指标的 RESTful API 接口。支持按服务名称和版本进行查询。
+
+## 架构设计
+
+### 模块结构
+
+```
+internal/prometheus_adapter/
+├── server.go           # 服务器主入口，负责初始化和生命周期管理
+├── api/                # API 层，处理 HTTP 请求
+│   ├── api.go         # API 基础结构和初始化
+│   └── metric_api.go  # 指标相关的 API 处理器
+├── service/            # 业务逻辑层
+│   └── metric_service.go  # 指标查询服务实现
+├── client/             # Prometheus 客户端
+│   └── prometheus_client.go  # 封装 Prometheus API 调用
+└── model/              # 数据模型
+    ├── api.go         # API 请求响应模型
+    ├── constants.go   # 常量定义（错误码等）
+    └── error.go       # 错误类型定义
+```
+
+### 层次设计
+
+1. **API 层** (`api/`)
+   - 处理 HTTP 请求和响应
+   - 参数验证和解析
+   - 错误响应格式化
+
+2. **Service 层** (`service/`)
+   - 业务逻辑处理
+   - 指标和服务存在性验证
+   - 数据转换和组装
+
+3. **Client 层** (`client/`)
+   - 与 Prometheus API 交互
+   - PromQL 查询构建
+   - 结果数据转换
+
+4. **Model 层** (`model/`)
+   - 统一的数据模型定义
+   - 错误类型和错误码
+   - 请求响应结构体
+
+### 核心组件
+
+#### PrometheusAdapterServer
+主服务器组件，负责：
+- 初始化 Prometheus 客户端
+- 创建服务实例
+- 设置 API 路由
+- 管理生命周期
+
+#### PrometheusClient
+Prometheus 客户端封装，提供：
+- `QueryRange`: 执行时间范围查询
+- `GetAvailableMetrics`: 获取所有可用指标
+- `CheckMetricExists`: 检查指标是否存在
+- `CheckServiceExists`: 检查服务是否存在
+- `BuildQuery`: 构建 PromQL 查询语句
+
+#### MetricService
+业务逻辑服务，实现：
+- 动态指标发现
+- 查询参数验证
+- 错误处理和转换
+
+## 配置说明
+
+### 环境变量
+
+| 变量名 | 说明 | 默认值 |
+|--------|------|--------|
+| PROMETHEUS_ADDRESS | Prometheus 服务器地址 | http://10.210.10.33:9090 |
 
 ## API
 
