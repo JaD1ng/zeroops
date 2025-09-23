@@ -154,15 +154,9 @@ func CheckInstanceHealth(instanceIP string, instancePort int) (bool, error) {
 	return true, nil // 连接成功，实例健康
 }
 
-func GetAvailableHosts() ([]string, error) {
+func GetAvailableHosts() ([]model.HostInfo, error) {
 	// TODO: 实现获取可用主机逻辑
 	return nil, nil
-}
-
-// GetHostIp 根据主机名获取主机IP地址
-func GetHostIp(hostName string) (string, error) {
-	// TODO: 实现主机名称解析逻辑
-	return "", nil
 }
 
 // CheckHostHealth 判断主机运行状态
@@ -188,9 +182,9 @@ func CheckHostHealth(hostIpAddress string) (bool, error) {
 }
 
 // SelectHostForNewInstance 为新实例选择合适的主机
-func SelectHostForNewInstance(availableHosts []string, service string, version string) (string, error) {
+func SelectHostForNewInstance(availableHosts []model.HostInfo, service string, version string) (*model.HostInfo, error) {
 	// TODO: 实现主机选择逻辑
-	return "", nil
+	return nil, nil
 }
 
 // GenerateInstanceID 根据服务名生成实例ID

@@ -145,12 +145,8 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 			continue
 		}
 		// 6.2 获取主机ip
-		hostIP, err := GetHostIp(selectedHost)
-		if err != nil {
-			// 记录错误但继续处理其他实例
-			fmt.Printf("获取主机 %s 的IP失败: %v\n", selectedHost, err)
-			continue
-		}
+		hostIP := selectedHost.HostIPAddress
+
 		// 6.3 检查主机健康状态
 		healthy, err := CheckHostHealth(hostIP)
 		if err != nil {
