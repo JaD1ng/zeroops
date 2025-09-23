@@ -1,5 +1,43 @@
 package service
 
+import (
+	"fmt"
+	"strconv"
+	"sync"
+
+	"github.com/qiniu/zeroops/internal/deploy/config"
+	"github.com/qiniu/zeroops/internal/deploy/database"
+)
+
+var (
+	dbInstance   *database.Database
+	instanceRepo *database.InstanceRepo
+	dbOnce       sync.Once
+	dbErr        error
+)
+
+// initDatabase 初始化数据库连接（单例模式）
+func initDatabase() (*database.Database, error) {
+	dbOnce.Do(func() {
+		cfg, err := config.LoadConfig("internal/deploy/config.yaml")
+		if err != nil {
+			dbErr = fmt.Errorf("failed to load config: %w", err)
+			return
+		}
+
+		dbInstance, dbErr = database.NewDatabase(&cfg.Database)
+		if dbErr != nil {
+			dbErr = fmt.Errorf("failed to initialize database: %w", dbErr)
+			return
+		}
+
+		// 初始化实例仓库
+		instanceRepo = database.NewInstanceRepo(dbInstance)
+	})
+
+	return dbInstance, dbErr
+}
+
 // ValidatePackageURL 验证是否能通过URL找到包
 func ValidatePackageURL(packageURL string) error {
 	// TODO: 实现包URL验证逻辑
@@ -12,16 +50,58 @@ func GetServiceInstanceIDs(serviceName string, version ...string) ([]string, err
 	return nil, nil
 }
 
-// GetInstanceHost 根据实例ID获取实例的IP地址
+// GetInstanceIP 根据实例ID获取实例的IP地址
 func GetInstanceIP(instanceID string) (string, error) {
-	// TODO: 实现获取实例IP地址逻辑
-	return "", nil
+	// 参数验证
+	if instanceID == "" {
+		return "", fmt.Errorf("instanceID cannot be empty")
+	}
+
+	// 验证instanceID是否为有效的数字（因为数据库中id是SERIAL类型）
+	if _, err := strconv.Atoi(instanceID); err != nil {
+		return "", fmt.Errorf("invalid instanceID format: %s, must be a number", instanceID)
+	}
+
+	// 获取数据库连接
+	_, err := initDatabase()
+	if err != nil {
+		return "", fmt.Errorf("failed to initialize database connection: %w", err)
+	}
+
+	// 查询实例IP地址
+	ipAddress, err := instanceRepo.GetInstanceIPByInstanceID(instanceID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get instance IP for ID %s: %w", instanceID, err)
+	}
+
+	return ipAddress, nil
 }
 
 // GetInstancePort 根据实例ID获取实例的端口号
 func GetInstancePort(instanceID string) (int, error) {
-	// TODO: 实现获取实例端口号逻辑
-	return 0, nil
+	// 参数验证
+	if instanceID == "" {
+		return 0, fmt.Errorf("instanceID cannot be empty")
+	}
+
+	// 验证instanceID是否为有效的数字（因为数据库中id是SERIAL类型）
+	if _, err := strconv.Atoi(instanceID); err != nil {
+		return 0, fmt.Errorf("invalid instanceID format: %s, must be a number", instanceID)
+	}
+
+	// 获取数据库连接
+	_, err := initDatabase()
+	if err != nil {
+		return 0, fmt.Errorf("failed to initialize database connection: %w", err)
+	}
+
+	// 查询实例端口号
+	port, err := instanceRepo.GetInstancePortByInstanceID(instanceID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get instance port for ID %s: %w", instanceID, err)
+	}
+
+	return port, nil
 }
 
 // CheckInstanceHealth 检查单个实例是否有响应，用于发布前验证目标实例的可用性
