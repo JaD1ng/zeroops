@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"net"
+	"os/exec"
 	"strconv"
 	"sync"
 	"time"
@@ -166,8 +167,24 @@ func GetHostIp(hostName string) (string, error) {
 
 // CheckHostHealth 判断主机运行状态
 func CheckHostHealth(hostIpAddress string) (bool, error) {
-	// TODO: 实现主机健康检查逻辑
-	return true, nil
+	// 参数验证
+	if hostIpAddress == "" {
+		return false, fmt.Errorf("hostIpAddress cannot be empty")
+	}
+
+	// 验证IP地址格式
+	if net.ParseIP(hostIpAddress) == nil {
+		return false, fmt.Errorf("invalid IP address format: %s", hostIpAddress)
+	}
+
+	// 使用ping命令检查主机是否可达
+	cmd := exec.Command("ping", "-c", "1", "-W", "3", hostIpAddress)
+	err := cmd.Run()
+	if err != nil {
+		return false, nil // ping失败，主机不可达
+	}
+
+	return true, nil // ping成功，主机健康
 }
 
 // SelectHostForNewInstance 为新实例选择合适的主机
