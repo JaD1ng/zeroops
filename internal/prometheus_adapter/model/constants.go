@@ -7,4 +7,5 @@ const (
 	ErrorCodeInvalidParameter = "INVALID_PARAMETER"
 	ErrorCodePrometheusError  = "PROMETHEUS_ERROR"
 	ErrorCodeInternalError    = "INTERNAL_ERROR"
+	ErrorCodeRuleNotFound     = "RULE_NOT_FOUND"
 )
