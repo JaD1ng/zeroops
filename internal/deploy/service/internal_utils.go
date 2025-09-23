@@ -2,8 +2,10 @@ package service
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/qiniu/zeroops/internal/deploy/config"
 	"github.com/qiniu/zeroops/internal/deploy/database"
@@ -105,9 +107,23 @@ func GetInstancePort(instanceID string) (int, error) {
 }
 
 // CheckInstanceHealth 检查单个实例是否有响应，用于发布前验证目标实例的可用性
-func CheckInstanceHealth(instanceID string) (bool, error) {
-	// TODO: 实现实例健康检查逻辑
-	return false, nil
+func CheckInstanceHealth(instanceIP string, instancePort int) (bool, error) {
+	// 参数验证
+	if instanceIP == "" {
+		return false, fmt.Errorf("instanceIP cannot be empty")
+	}
+	if instancePort <= 0 || instancePort > 65535 {
+		return false, fmt.Errorf("invalid port number: %d", instancePort)
+	}
+
+	// 尝试连接实例的IP和端口
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", instanceIP, instancePort), 5*time.Second)
+	if err != nil {
+		return false, nil // 连接失败，实例不健康
+	}
+	defer conn.Close()
+
+	return true, nil // 连接成功，实例健康
 }
 
 func GetAvailableHosts() ([]string, error) {

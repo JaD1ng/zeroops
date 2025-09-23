@@ -143,7 +143,7 @@ func GetInstancePort(instanceID string) (int, error)
 
 ### 5.5 **CheckInstanceHealth**: 检查实例的健康状态
 ```go
-func CheckInstanceHealth(instanceID string) (bool, error)
+func CheckInstanceHealth(instanceIP string, instancePort int) (bool, error)
 ```
 
 ### 5.6 **GetAvailableHosts**: 获取所有可用的主机列表

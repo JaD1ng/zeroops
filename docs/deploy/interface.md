@@ -242,12 +242,13 @@ instanceID string // 必填，实例ID
 
 **函数签名**:
 ```go
-func CheckInstanceHealth(instanceID string) (bool, error)
+func CheckInstanceHealth(instanceIP string, instancePort int) (bool, error)
 ```
 
 **输入参数**:
 ```go
-instanceID string // 必填，实例ID
+instanceIP string // 必填，实例IP地址
+instancePort int  // 必填，实例端口号
 ```
 
 **返回结果**: `bool` - 健康检查结果，true表示实例有响应，false表示无响应
