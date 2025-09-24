@@ -212,3 +212,101 @@ func (r *InstanceRepo) CreateVersionHistory(versionHistory *model.VersionHistory
 	versionHistory.ID = id
 	return nil
 }
+
+// UpdateInstanceVersion 更新实例版本信息
+func (r *InstanceRepo) UpdateInstanceVersion(instanceID, serviceName, serviceVersion string) error {
+	// 更新instances表中的版本信息
+	updateInstanceQuery := `
+		UPDATE instances 
+		SET service_version = $1 
+		WHERE id = $2 AND service_name = $3
+	`
+
+	result, err := r.db.Exec(updateInstanceQuery, serviceVersion, instanceID, serviceName)
+	if err != nil {
+		return fmt.Errorf("failed to update instance version: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("instance %s not found or not updated", instanceID)
+	}
+
+	return nil
+}
+
+// CreateVersionHistoryForUpdate 为版本更新创建版本历史记录
+func (r *InstanceRepo) CreateVersionHistoryForUpdate(instanceID, serviceName, serviceVersion string) error {
+	// 创建新的版本历史记录
+	versionHistory := &model.VersionHistory{
+		InstanceID:     instanceID,
+		ServiceName:    serviceName,
+		ServiceVersion: serviceVersion,
+		Status:         "active", // 新版本默认为active
+	}
+
+	return r.CreateVersionHistory(versionHistory)
+}
+
+// UpdateVersionStatus 更新版本状态
+func (r *InstanceRepo) UpdateVersionStatus(instanceID, serviceName, serviceVersion, newStatus string) error {
+	query := `
+		UPDATE version_histories 
+		SET status = $1 
+		WHERE instance_id = $2 AND service_name = $3 AND service_version = $4
+	`
+
+	result, err := r.db.Exec(query, newStatus, instanceID, serviceName, serviceVersion)
+	if err != nil {
+		return fmt.Errorf("failed to update version status: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("version history not found for instance %s, service %s, version %s", instanceID, serviceName, serviceVersion)
+	}
+
+	return nil
+}
+
+// GetCurrentActiveVersion 获取当前活跃版本
+func (r *InstanceRepo) GetCurrentActiveVersion(instanceID, serviceName string) (string, error) {
+	query := `
+		SELECT service_version 
+		FROM version_histories 
+		WHERE instance_id = $1 AND service_name = $2 AND status = 'active'
+		ORDER BY id DESC 
+		LIMIT 1
+	`
+
+	var currentVersion string
+	err := r.db.QueryRow(query, instanceID, serviceName).Scan(&currentVersion)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("no active version found for instance %s, service %s", instanceID, serviceName)
+		}
+		return "", fmt.Errorf("failed to get current active version: %w", err)
+	}
+
+	return currentVersion, nil
+}
+
+// CreateInstanceVersionHistory 创建实例版本历史记录
+func (r *InstanceRepo) CreateInstanceVersionHistory(instanceID, serviceName, serviceVersion, status string) error {
+	versionHistory := &model.VersionHistory{
+		InstanceID:     instanceID,
+		ServiceName:    serviceName,
+		ServiceVersion: serviceVersion,
+		Status:         status,
+	}
+
+	return r.CreateVersionHistory(versionHistory)
+}

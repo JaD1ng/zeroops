@@ -255,7 +255,7 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 	}
 
 	// 3. 下载包文件
-	packageFilePath, md5sum, err := f.downloadPackage(params.PackageURL)
+	packageFilePath, _, err := f.downloadPackage(params.PackageURL)
 	if err != nil {
 		return nil, fmt.Errorf("下载包文件失败: %v", err)
 	}
@@ -295,14 +295,39 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 			continue
 		}
 
-		// 5.3 部署到单个实例
-		if err := f.deployToSingleInstance(instanceIP, params.Service, params.Version, fversion, packageFilePath, md5sum); err != nil {
+		// 5.3 处理包文件（修改配置文件中的端口）
+		modifiedPackagePath, newMd5sum, err := f.processPackageWithPort(packageFilePath, params.Service, instancePort)
+		if err != nil {
+			fmt.Printf("处理包文件失败: %v\n", err)
+			continue
+		}
+		defer os.Remove(modifiedPackagePath) // 清理修改后的包文件
+
+		// 5.4 部署到单个实例（使用修改后的包文件）
+		if err := f.deployToSingleInstance(instanceIP, params.Service, params.Version, fversion, modifiedPackagePath, newMd5sum); err != nil {
 			// 记录错误但继续处理其他实例
 			fmt.Printf("部署到实例 %s (%s) 失败: %v\n", instanceID, instanceIP, err)
 			continue
 		}
 
-		// TODO: 将实例信息添加到数据库
+		// 5.5 更新实例版本信息到数据库
+		if err := f.updateInstanceVersion(instanceID, params.Service, params.Version); err != nil {
+			fmt.Printf("更新实例 %s 版本信息失败: %v\n", instanceID, err)
+			// 继续处理，不因为数据库错误而中断部署流程
+		} else {
+			// 5.6 处理版本历史记录（DeployNewVersion逻辑）
+			// 获取当前活跃版本并标记为deprecated
+			if currentVersion, err := f.getCurrentActiveVersion(instanceID, params.Service); err == nil {
+				if err := f.updateVersionStatus(instanceID, params.Service, currentVersion, "deprecated"); err != nil {
+					fmt.Printf("更新实例 %s 当前版本状态失败: %v\n", instanceID, err)
+				}
+			}
+
+			// 创建新版本的版本历史记录
+			if err := f.createInstanceVersionHistory(instanceID, params.Service, params.Version, "active"); err != nil {
+				fmt.Printf("创建实例 %s 版本历史记录失败: %v\n", instanceID, err)
+			}
+		}
 
 		successInstances = append(successInstances, instanceID)
 	}
@@ -331,7 +356,7 @@ func (f *floyDeployService) ExecuteRollback(params *model.RollbackParams) (*mode
 	}
 
 	// 3. 下载回滚包文件
-	packageFilePath, md5sum, err := f.downloadPackage(params.PackageURL)
+	packageFilePath, _, err := f.downloadPackage(params.PackageURL)
 	if err != nil {
 		return nil, fmt.Errorf("下载回滚包文件失败: %v", err)
 	}
@@ -371,14 +396,39 @@ func (f *floyDeployService) ExecuteRollback(params *model.RollbackParams) (*mode
 			continue
 		}
 
-		// 5.3 回滚到单个实例
-		if err := f.rollbackToSingleInstance(instanceIP, params.Service, params.TargetVersion, fversion, packageFilePath, md5sum); err != nil {
+		// 5.3 处理包文件（修改配置文件中的端口）
+		modifiedPackagePath, newMd5sum, err := f.processPackageWithPort(packageFilePath, params.Service, instancePort)
+		if err != nil {
+			fmt.Printf("处理包文件失败: %v\n", err)
+			continue
+		}
+		defer os.Remove(modifiedPackagePath) // 清理修改后的包文件
+
+		// 5.4 回滚到单个实例（使用修改后的包文件）
+		if err := f.rollbackToSingleInstance(instanceIP, params.Service, params.TargetVersion, fversion, modifiedPackagePath, newMd5sum); err != nil {
 			// 记录错误但继续处理其他实例
 			fmt.Printf("回滚到实例 %s (%s) 失败: %v\n", instanceID, instanceIP, err)
 			continue
 		}
 
-		// TODO: 将实例信息添加到数据库
+		// 5.5 更新实例版本信息到数据库
+		if err := f.updateInstanceVersion(instanceID, params.Service, params.TargetVersion); err != nil {
+			fmt.Printf("更新实例 %s 版本信息失败: %v\n", instanceID, err)
+			// 继续处理，不因为数据库错误而中断部署流程
+		} else {
+			// 5.6 处理版本历史记录（ExecuteRollback逻辑）
+			// 获取当前活跃版本并标记为rollback
+			if currentVersion, err := f.getCurrentActiveVersion(instanceID, params.Service); err == nil {
+				if err := f.updateVersionStatus(instanceID, params.Service, currentVersion, "rollback"); err != nil {
+					fmt.Printf("更新实例 %s 当前版本状态失败: %v\n", instanceID, err)
+				}
+			}
+
+			// 将目标版本状态改为active
+			if err := f.updateVersionStatus(instanceID, params.Service, params.TargetVersion, "active"); err != nil {
+				fmt.Printf("更新实例 %s 目标版本状态失败: %v\n", instanceID, err)
+			}
+		}
 
 		successInstances = append(successInstances, instanceID)
 	}
@@ -1024,6 +1074,62 @@ func (f *floyDeployService) createVersionHistoryRecord(instanceID, serviceName, 
 
 	fmt.Printf("成功创建版本历史记录，版本历史ID: %d\n", versionHistory.ID)
 	return versionHistory, nil
+}
+
+// updateInstanceVersion 更新实例版本信息（通用方法）
+func (f *floyDeployService) updateInstanceVersion(instanceID, serviceName, serviceVersion string) error {
+	// 初始化数据库连接
+	_, err := initDatabase()
+	if err != nil {
+		return fmt.Errorf("failed to initialize database connection: %w", err)
+	}
+
+	// 更新instances表中的版本信息
+	if err := instanceRepo.UpdateInstanceVersion(instanceID, serviceName, serviceVersion); err != nil {
+		return fmt.Errorf("failed to update instance version: %w", err)
+	}
+
+	fmt.Printf("成功更新实例 %s 版本信息到数据库，新版本: %s\n", instanceID, serviceVersion)
+	return nil
+}
+
+// createInstanceVersionHistory 创建实例版本历史记录
+func (f *floyDeployService) createInstanceVersionHistory(instanceID, serviceName, serviceVersion, status string) error {
+	// 初始化数据库连接
+	_, err := initDatabase()
+	if err != nil {
+		return fmt.Errorf("failed to initialize database connection: %w", err)
+	}
+
+	// 创建版本历史记录
+	if err := instanceRepo.CreateInstanceVersionHistory(instanceID, serviceName, serviceVersion, status); err != nil {
+		return fmt.Errorf("failed to create version history: %w", err)
+	}
+
+	fmt.Printf("成功创建实例 %s 版本历史记录，版本: %s，状态: %s\n", instanceID, serviceVersion, status)
+	return nil
+}
+
+// getCurrentActiveVersion 获取当前活跃版本
+func (f *floyDeployService) getCurrentActiveVersion(instanceID, serviceName string) (string, error) {
+	// 初始化数据库连接
+	_, err := initDatabase()
+	if err != nil {
+		return "", fmt.Errorf("failed to initialize database connection: %w", err)
+	}
+
+	return instanceRepo.GetCurrentActiveVersion(instanceID, serviceName)
+}
+
+// updateVersionStatus 更新版本状态
+func (f *floyDeployService) updateVersionStatus(instanceID, serviceName, serviceVersion, newStatus string) error {
+	// 初始化数据库连接
+	_, err := initDatabase()
+	if err != nil {
+		return fmt.Errorf("failed to initialize database connection: %w", err)
+	}
+
+	return instanceRepo.UpdateVersionStatus(instanceID, serviceName, serviceVersion, newStatus)
 }
 
 // validateRollbackParams 验证回滚参数
