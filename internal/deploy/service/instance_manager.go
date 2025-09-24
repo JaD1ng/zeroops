@@ -1,6 +1,10 @@
 package service
 
-import "github.com/qiniu/zeroops/internal/deploy/model"
+import (
+	"fmt"
+
+	"github.com/qiniu/zeroops/internal/deploy/model"
+)
 
 // InstanceManager 实例管理接口，负责实例信息查询和状态管理
 type InstanceManager interface {
@@ -19,7 +23,12 @@ func NewFloyInstanceService() InstanceManager {
 }
 
 func (f *floyInstanceService) GetServiceInstances(serviceName string, version ...string) ([]*model.InstanceInfo, error) {
-	return nil, nil
+	// 调用 internal_utils 中已实现的同名函数
+	instances, err := GetServiceInstanceInfos(serviceName, version...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get service instances %w", err)
+	}
+	return instances, nil
 }
 
 func (f *floyInstanceService) GetInstanceVersionHistory(instanceID string) ([]*model.VersionInfo, error) {
