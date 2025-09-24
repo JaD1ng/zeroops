@@ -37,14 +37,14 @@ func (r *HostRepo) GetAvailableHostInfos() ([]*model.HostInfo, error) {
 
 	var hostInfos []*model.HostInfo
 	for rows.Next() {
-		var hostInfo model.HostInfo
+		hostInfo := new(model.HostInfo)
 		var id int
 		err := rows.Scan(&id, &hostInfo.HostName, &hostInfo.HostIPAddress, &hostInfo.IsStopped)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan host: %w", err)
 		}
 		hostInfo.HostID = strconv.Itoa(id)
-		hostInfos = append(hostInfos, &hostInfo)
+		hostInfos = append(hostInfos, hostInfo)
 	}
 
 	if err := rows.Err(); err != nil {

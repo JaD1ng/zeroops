@@ -69,7 +69,7 @@ func (r *InstanceRepo) GetInstanceInfosByServiceName(serviceName string) ([]*mod
 
 	var instanceInfos []*model.InstanceInfo
 	for rows.Next() {
-		var instanceInfo model.InstanceInfo
+		instanceInfo := new(model.InstanceInfo)
 		var id int
 		err := rows.Scan(&id, &instanceInfo.ServiceVersion, &instanceInfo.Status)
 		if err != nil {
@@ -77,7 +77,7 @@ func (r *InstanceRepo) GetInstanceInfosByServiceName(serviceName string) ([]*mod
 		}
 		instanceInfo.InstanceID = strconv.Itoa(id)
 		instanceInfo.ServiceName = serviceName // 直接使用参数值
-		instanceInfos = append(instanceInfos, &instanceInfo)
+		instanceInfos = append(instanceInfos, instanceInfo)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -104,7 +104,7 @@ func (r *InstanceRepo) GetInstanceInfosByServiceNameAndVersion(serviceName, serv
 
 	var instanceInfos []*model.InstanceInfo
 	for rows.Next() {
-		var instanceInfo model.InstanceInfo
+		instanceInfo := new(model.InstanceInfo)
 		var id int
 		err := rows.Scan(&id, &instanceInfo.Status)
 		if err != nil {
@@ -113,7 +113,7 @@ func (r *InstanceRepo) GetInstanceInfosByServiceNameAndVersion(serviceName, serv
 		instanceInfo.InstanceID = strconv.Itoa(id)
 		instanceInfo.ServiceName = serviceName       // 直接使用参数值
 		instanceInfo.ServiceVersion = serviceVersion // 直接使用参数值
-		instanceInfos = append(instanceInfos, &instanceInfo)
+		instanceInfos = append(instanceInfos, instanceInfo)
 	}
 
 	if err := rows.Err(); err != nil {
