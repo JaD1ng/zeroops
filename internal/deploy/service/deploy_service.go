@@ -215,7 +215,18 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 		// 6.8 记录实例信息到数据库（包含端口）
 		fmt.Printf("实例 %s 部署成功，IP: %s, 端口: %d\n", instanceID, instanceIP, instancePort)
 
-		// TODO: 将实例信息添加到数据库
+		// 6.9 将实例信息添加到数据库
+		_, err = f.createInstanceRecord(params.Service, params.Version, selectedHost.HostID, hostIP, instanceIP, instancePort)
+		if err != nil {
+			fmt.Printf("创建实例记录失败: %v\n", err)
+			// 继续处理，不因为数据库错误而中断部署流程
+		} else {
+			// 创建版本历史记录
+			if _, err := f.createVersionHistoryRecord(instanceID, params.Service, params.Version); err != nil {
+				fmt.Printf("创建版本历史记录失败: %v\n", err)
+				// 继续处理，不因为数据库错误而中断部署流程
+			}
+		}
 
 		successfulInstances = append(successfulInstances, instanceID)
 	}
@@ -959,6 +970,60 @@ func (f *floyDeployService) runService(instanceIP, service, bashfile, installDir
 	}
 
 	return nil
+}
+
+// createInstanceRecord 创建实例记录到数据库
+func (f *floyDeployService) createInstanceRecord(serviceName, serviceVersion, hostID, hostIP, instanceIP string, port int) (*model.Instance, error) {
+	// 初始化数据库连接
+	_, err := initDatabase()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize database connection: %w", err)
+	}
+
+	// 创建实例记录
+	instance := &model.Instance{
+		ServiceName:    serviceName,
+		ServiceVersion: serviceVersion,
+		HostID:         hostID,
+		HostIPAddress:  hostIP,
+		IPAddress:      instanceIP, // ip_address和host_ip_address相同
+		Port:           port,
+		Status:         "active", // 默认状态为active
+		IsStopped:      false,    // 默认未停止
+	}
+
+	// 保存实例到数据库
+	if err := instanceRepo.CreateInstance(instance); err != nil {
+		return nil, fmt.Errorf("failed to create instance record: %w", err)
+	}
+
+	fmt.Printf("成功创建实例记录，实例ID: %d\n", instance.ID)
+	return instance, nil
+}
+
+// createVersionHistoryRecord 创建版本历史记录到数据库
+func (f *floyDeployService) createVersionHistoryRecord(instanceID, serviceName, serviceVersion string) (*model.VersionHistory, error) {
+	// 初始化数据库连接
+	_, err := initDatabase()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize database connection: %w", err)
+	}
+
+	// 创建版本历史记录
+	versionHistory := &model.VersionHistory{
+		InstanceID:     instanceID,
+		ServiceName:    serviceName,
+		ServiceVersion: serviceVersion,
+		Status:         "active", // 默认状态为active
+	}
+
+	// 保存版本历史到数据库
+	if err := instanceRepo.CreateVersionHistory(versionHistory); err != nil {
+		return nil, fmt.Errorf("failed to create version history record: %w", err)
+	}
+
+	fmt.Printf("成功创建版本历史记录，版本历史ID: %d\n", versionHistory.ID)
+	return versionHistory, nil
 }
 
 // validateRollbackParams 验证回滚参数

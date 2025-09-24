@@ -160,3 +160,55 @@ func (r *InstanceRepo) GetVersionHistoryByInstanceID(instanceID string) ([]*mode
 
 	return versionInfos, nil
 }
+
+// CreateInstance 创建新实例记录
+func (r *InstanceRepo) CreateInstance(instance *model.Instance) error {
+	query := `
+		INSERT INTO instances (service_name, service_version, host_id, host_ip_address, ip_address, port, status, is_stopped)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id
+	`
+
+	var id int
+	err := r.db.QueryRow(query,
+		instance.ServiceName,
+		instance.ServiceVersion,
+		instance.HostID,
+		instance.HostIPAddress,
+		instance.IPAddress,
+		instance.Port,
+		instance.Status,
+		instance.IsStopped,
+	).Scan(&id)
+
+	if err != nil {
+		return fmt.Errorf("failed to create instance: %w", err)
+	}
+
+	instance.ID = id
+	return nil
+}
+
+// CreateVersionHistory 创建版本历史记录
+func (r *InstanceRepo) CreateVersionHistory(versionHistory *model.VersionHistory) error {
+	query := `
+		INSERT INTO version_histories (instance_id, service_name, service_version, status)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id
+	`
+
+	var id int
+	err := r.db.QueryRow(query,
+		versionHistory.InstanceID,
+		versionHistory.ServiceName,
+		versionHistory.ServiceVersion,
+		versionHistory.Status,
+	).Scan(&id)
+
+	if err != nil {
+		return fmt.Errorf("failed to create version history: %w", err)
+	}
+
+	versionHistory.ID = id
+	return nil
+}
