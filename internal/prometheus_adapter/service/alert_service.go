@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -18,24 +19,34 @@ import (
 type AlertService struct {
 	promClient    *client.PrometheusClient
 	rulesFilePath string
+	// 内存中缓存当前规则，用于增量更新
+	currentRules     []model.AlertRule
+	currentRuleMetas []model.AlertRuleMeta
 }
 
 // NewAlertService 创建告警服务
 func NewAlertService(promClient *client.PrometheusClient) *AlertService {
 	rulesFilePath := os.Getenv("PROMETHEUS_RULES_FILE")
 	if rulesFilePath == "" {
-		rulesFilePath = "/etc/prometheus/rules/alert_rules.yml"
+		// 在本地生成规则文件，用于调试和后续同步到远程容器
+		rulesFilePath = "./prometheus_rules/alert_rules.yml"
 	}
 
 	return &AlertService{
-		promClient:    promClient,
-		rulesFilePath: rulesFilePath,
+		promClient:       promClient,
+		rulesFilePath:    rulesFilePath,
+		currentRules:     []model.AlertRule{},
+		currentRuleMetas: []model.AlertRuleMeta{},
 	}
 }
 
 // SyncRulesToPrometheus 同步规则到Prometheus
 // 接收完整的规则列表，生成Prometheus规则文件并重载配置
 func (s *AlertService) SyncRulesToPrometheus(rules []model.AlertRule, ruleMetas []model.AlertRuleMeta) error {
+	// 保存到内存缓存
+	s.currentRules = rules
+	s.currentRuleMetas = ruleMetas
+
 	// 构建Prometheus规则文件
 	prometheusRules := s.buildPrometheusRules(rules, ruleMetas)
 
@@ -73,14 +84,9 @@ func (s *AlertService) buildPrometheusRules(rules []model.AlertRule, ruleMetas [
 		// 查找对应的规则模板
 		var rule *model.AlertRule
 
-		// 尝试从alert_name中提取规则名
-		// 假设alert_name格式为: {rule_name}_{service}_{version} 或类似格式
-		for ruleName, r := range ruleMap {
-			if strings.HasPrefix(meta.AlertName, ruleName) {
-				rule = r
-				break
-			}
-		}
+		// 通过 alert_name 直接查找对应的规则模板
+		// AlertRuleMeta.alert_name 关联 AlertRule.name
+		rule = ruleMap[meta.AlertName]
 
 		if rule == nil {
 			log.Warn().
@@ -105,7 +111,6 @@ func (s *AlertService) buildPrometheusRules(rules []model.AlertRule, ruleMetas [
 
 		// 添加severity标签
 		labels["severity"] = rule.Severity
-		labels["rule_name"] = rule.Name
 
 		// 构建表达式
 		expr := s.buildExpression(rule, &meta)
@@ -122,8 +127,9 @@ func (s *AlertService) buildPrometheusRules(rules []model.AlertRule, ruleMetas [
 			forDuration = fmt.Sprintf("%ds", meta.WatchTime)
 		}
 
+		// 使用规则名作为 alert 名称，通过 labels 区分不同实例
 		promRule := model.PrometheusRule{
-			Alert:       meta.AlertName,
+			Alert:       rule.Name, // 使用规则名作为 alert 名称
 			Expr:        expr,
 			For:         forDuration,
 			Labels:      labels,
@@ -179,10 +185,6 @@ func (s *AlertService) buildExpression(rule *model.AlertRule, meta *model.AlertR
 	if len(labels) > 0 {
 		labelMatchers := []string{}
 		for k, v := range labels {
-			// 跳过内部使用的标签
-			if k == "rule_name" {
-				continue
-			}
 			labelMatchers = append(labelMatchers, fmt.Sprintf(`%s="%s"`, k, v))
 		}
 
@@ -205,20 +207,6 @@ func (s *AlertService) buildExpression(rule *model.AlertRule, meta *model.AlertR
 					metricEnd = len(expr)
 				}
 				expr = expr[:metricEnd] + "{" + strings.Join(labelMatchers, ",") + "}" + expr[metricEnd:]
-			}
-		}
-	}
-
-	// 添加时间范围
-	if meta.MatchTime != "" {
-		// 查找最后一个指标，添加时间范围
-		if !strings.Contains(expr, "[") {
-			// 简单处理：在第一个空格前添加时间范围
-			parts := strings.SplitN(expr, " ", 2)
-			if len(parts) == 2 {
-				expr = parts[0] + "[" + meta.MatchTime + "] " + parts[1]
-			} else {
-				expr = expr + "[" + meta.MatchTime + "]"
 			}
 		}
 	}
@@ -253,7 +241,13 @@ func (s *AlertService) writeRulesFile(rules *model.PrometheusRuleFile) error {
 	log.Info().
 		Str("file", s.rulesFilePath).
 		Int("groups", len(rules.Groups)).
-		Msg("Prometheus rules file updated")
+		Msg("Prometheus rules file updated locally")
+
+	// 同步到 Prometheus 容器
+	if err := s.syncToPrometheusContainer(); err != nil {
+		log.Warn().Err(err).Msg("Failed to sync rules to Prometheus container")
+		// 不返回错误，因为本地文件已经生成成功
+	}
 
 	return nil
 }
@@ -279,4 +273,195 @@ func (s *AlertService) reloadPrometheus() error {
 
 	log.Info().Msg("Prometheus configuration reloaded")
 	return nil
+}
+
+// syncToPrometheusContainer 同步规则文件到本地 Prometheus 容器
+func (s *AlertService) syncToPrometheusContainer() error {
+	// 获取容器名称，默认为 mock-s3-prometheus
+	containerName := os.Getenv("PROMETHEUS_CONTAINER")
+	if containerName == "" {
+		containerName = "mock-s3-prometheus"
+	}
+
+	// 1. 创建容器内的规则目录（如果不存在）
+	cmdMkdir := exec.Command("docker", "exec", containerName, "mkdir", "-p", "/etc/prometheus/rules")
+	if output, err := cmdMkdir.CombinedOutput(); err != nil {
+		// 目录可能已存在，记录日志但不返回错误
+		log.Debug().
+			Str("output", string(output)).
+			Msg("mkdir in container (may already exist)")
+	}
+
+	// 2. 将规则文件拷贝到容器内
+	cmdCopy := exec.Command("docker", "cp", s.rulesFilePath, fmt.Sprintf("%s:/etc/prometheus/rules/alert_rules.yml", containerName))
+	if output, err := cmdCopy.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to copy rules file to container: %w, output: %s", err, string(output))
+	}
+
+	log.Info().
+		Str("container", containerName).
+		Str("file", s.rulesFilePath).
+		Msg("Rules synced to Prometheus container")
+
+	// 3. 确保 Prometheus 配置包含 rule_files
+	if err := s.ensurePrometheusRuleConfig(containerName); err != nil {
+		log.Warn().Err(err).Msg("Failed to ensure Prometheus rule configuration")
+	}
+
+	return nil
+}
+
+// ensurePrometheusRuleConfig 确保 Prometheus 配置文件包含 rule_files 配置
+func (s *AlertService) ensurePrometheusRuleConfig(containerName string) error {
+	configPath := "/etc/prometheus/prometheus.yml"
+
+	// 1. 检查配置文件是否已包含 rule_files
+	cmdCheck := exec.Command("docker", "exec", containerName, "grep", "-q", "rule_files:", configPath)
+	if err := cmdCheck.Run(); err == nil {
+		// 已经包含 rule_files，不需要修改
+		log.Debug().Msg("Prometheus config already contains rule_files")
+		return nil
+	}
+
+	log.Info().Msg("Adding rule_files configuration to Prometheus")
+
+	// 3. 在 global 部分后添加 rule_files 配置
+	// 使用 sed 在 global: 块后插入 rule_files 配置
+	sedScript := `'/^global:/,/^[^[:space:]]/ {
+		/^[^[:space:]]/ {
+			i\
+# Alert rules\
+rule_files:\
+  - "/etc/prometheus/rules/*.yml"\
+
+		}
+	}'`
+
+	cmdSed := exec.Command("docker", "exec", containerName, "sh", "-c",
+		fmt.Sprintf(`sed -i '%s' %s`, sedScript, configPath))
+
+	if output, err := cmdSed.CombinedOutput(); err != nil {
+		// 如果 sed 失败，尝试使用更简单的方法
+		log.Warn().
+			Str("output", string(output)).
+			Msg("sed failed, trying alternative method")
+
+		// 使用 awk 方法
+		awkScript := `awk '/^global:/ {print; getline; print; print "# Alert rules"; print "rule_files:"; print "  - \"/etc/prometheus/rules/*.yml\""; next} {print}' %s > %s.tmp && mv %s.tmp %s`
+		cmdAwk := exec.Command("docker", "exec", containerName, "sh", "-c",
+			fmt.Sprintf(awkScript, configPath, configPath, configPath, configPath))
+
+		if output, err := cmdAwk.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to add rule_files to config: %w, output: %s", err, string(output))
+		}
+	}
+
+	log.Info().Msg("Successfully added rule_files configuration to Prometheus")
+
+	// 4. 重启 Prometheus 容器以应用配置
+	cmdRestart := exec.Command("docker", "restart", containerName)
+	if output, err := cmdRestart.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to restart Prometheus: %w, output: %s", err, string(output))
+	}
+
+	log.Info().Msg("Prometheus restarted with new configuration")
+	return nil
+}
+
+// UpdateRule 更新单个规则模板
+// 只更新传入的规则，其他规则和所有元信息保持不变
+func (s *AlertService) UpdateRule(rule model.AlertRule) error {
+	// 查找并更新规则
+	found := false
+	for i, r := range s.currentRules {
+		if r.Name == rule.Name {
+			s.currentRules[i] = rule
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		// 如果规则不存在，添加新规则
+		s.currentRules = append(s.currentRules, rule)
+	}
+
+	// 统计受影响的元信息数量
+	affectedCount := 0
+	for _, meta := range s.currentRuleMetas {
+		if meta.AlertName == rule.Name {
+			affectedCount++
+		}
+	}
+
+	log.Info().
+		Str("rule", rule.Name).
+		Int("affected_metas", affectedCount).
+		Msg("Updating rule and affected metas")
+
+	// 使用更新后的规则重新生成并同步
+	return s.regenerateAndSync()
+}
+
+// UpdateRuleMeta 更新单个规则元信息
+// 通过 alert_name + labels 唯一确定一个元信息记录
+func (s *AlertService) UpdateRuleMeta(meta model.AlertRuleMeta) error {
+	// 查找并更新元信息
+	found := false
+	for i, m := range s.currentRuleMetas {
+		// 通过 alert_name + labels 唯一确定
+		if m.AlertName == meta.AlertName && m.Labels == meta.Labels {
+			s.currentRuleMetas[i] = meta
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		// 如果元信息不存在，添加新元信息
+		s.currentRuleMetas = append(s.currentRuleMetas, meta)
+	}
+
+	log.Info().
+		Str("alert_name", meta.AlertName).
+		Str("labels", meta.Labels).
+		Msg("Updating rule meta")
+
+	// 使用更新后的元信息重新生成并同步
+	return s.regenerateAndSync()
+}
+
+// regenerateAndSync 使用当前内存中的规则和元信息重新生成Prometheus规则并同步
+func (s *AlertService) regenerateAndSync() error {
+	// 构建Prometheus规则文件
+	prometheusRules := s.buildPrometheusRules(s.currentRules, s.currentRuleMetas)
+
+	// 写入规则文件
+	if err := s.writeRulesFile(prometheusRules); err != nil {
+		return fmt.Errorf("failed to write rules file: %w", err)
+	}
+
+	// 通知Prometheus重新加载配置
+	if err := s.reloadPrometheus(); err != nil {
+		log.Warn().Err(err).Msg("Failed to reload Prometheus, rules file has been updated")
+		// 不返回错误，因为文件已经更新成功
+	}
+
+	log.Info().
+		Int("rules_count", len(s.currentRules)).
+		Int("metas_count", len(s.currentRuleMetas)).
+		Msg("Rules regenerated and synced to Prometheus")
+
+	return nil
+}
+
+// GetAffectedMetas 获取受影响的元信息数量
+func (s *AlertService) GetAffectedMetas(ruleName string) int {
+	count := 0
+	for _, meta := range s.currentRuleMetas {
+		if meta.AlertName == ruleName {
+			count++
+		}
+	}
+	return count
 }

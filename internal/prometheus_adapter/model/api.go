@@ -42,16 +42,10 @@ type CreateAlertRuleRequest struct {
 
 // UpdateAlertRuleRequest 更新告警规则请求
 type UpdateAlertRuleRequest struct {
-	Description *string `json:"description,omitempty"`
-	Expr        *string `json:"expr,omitempty"`
-	Op          *string `json:"op,omitempty" binding:"omitempty,oneof=> < = !="`
-	Severity    *string `json:"severity,omitempty"`
-
-	// 元信息字段（可选）
-	Labels    map[string]string `json:"labels,omitempty"`
-	Threshold *float64          `json:"threshold,omitempty"`
-	WatchTime *int              `json:"watch_time,omitempty"`
-	MatchTime *string           `json:"match_time,omitempty"`
+	Description string `json:"description,omitempty"`
+	Expr        string `json:"expr,omitempty"`
+	Op          string `json:"op,omitempty" binding:"omitempty,oneof=> < = !="`
+	Severity    string `json:"severity,omitempty"`
 }
 
 // CreateAlertRuleMetaRequest 创建告警规则元信息请求
@@ -65,10 +59,10 @@ type CreateAlertRuleMetaRequest struct {
 
 // UpdateAlertRuleMetaRequest 更新告警规则元信息请求
 type UpdateAlertRuleMetaRequest struct {
-	Labels    map[string]string `json:"labels,omitempty"`
-	Threshold *float64          `json:"threshold,omitempty"`
-	WatchTime *int              `json:"watch_time,omitempty"`
-	MatchTime *string           `json:"match_time,omitempty"`
+	AlertName string  `json:"alert_name" binding:"required"`
+	Labels    string  `json:"labels" binding:"required"`
+	Threshold float64 `json:"threshold"`
+	WatchTime int     `json:"watch_time"`
 }
 
 // SyncRulesRequest 同步规则请求
