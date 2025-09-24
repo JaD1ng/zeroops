@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/qiniu/zeroops/internal/prometheus_adapter/client"
@@ -17,8 +16,7 @@ import (
 
 // AlertService 告警服务 - 仅负责与Prometheus交互，不存储规则
 type AlertService struct {
-	promClient    *client.PrometheusClient
-	rulesFilePath string
+	promClient *client.PrometheusClient
 	// 内存中缓存当前规则，用于增量更新
 	currentRules     []model.AlertRule
 	currentRuleMetas []model.AlertRuleMeta
@@ -26,15 +24,8 @@ type AlertService struct {
 
 // NewAlertService 创建告警服务
 func NewAlertService(promClient *client.PrometheusClient) *AlertService {
-	rulesFilePath := os.Getenv("PROMETHEUS_RULES_FILE")
-	if rulesFilePath == "" {
-		// 在本地生成规则文件，用于调试和后续同步到远程容器
-		rulesFilePath = "./prometheus_rules/alert_rules.yml"
-	}
-
 	return &AlertService{
 		promClient:       promClient,
-		rulesFilePath:    rulesFilePath,
 		currentRules:     []model.AlertRule{},
 		currentRuleMetas: []model.AlertRuleMeta{},
 	}
@@ -221,33 +212,49 @@ func (s *AlertService) buildExpression(rule *model.AlertRule, meta *model.AlertR
 
 // writeRulesFile 写入规则文件
 func (s *AlertService) writeRulesFile(rules *model.PrometheusRuleFile) error {
-	// 确保目录存在
-	dir := filepath.Dir(s.rulesFilePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create rules directory: %w", err)
-	}
-
 	// 序列化为YAML
 	data, err := yaml.Marshal(rules)
 	if err != nil {
 		return fmt.Errorf("failed to marshal rules: %w", err)
 	}
 
-	// 写入文件
-	if err := os.WriteFile(s.rulesFilePath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write rules file: %w", err)
+	// 获取容器名称
+	containerName := os.Getenv("PROMETHEUS_CONTAINER")
+	if containerName == "" {
+		containerName = "mock-s3-prometheus"
+	}
+
+	// 直接写入到容器内的规则目录
+	// 使用docker exec和echo命令写入文件
+	cmd := exec.Command("docker", "exec", containerName, "sh", "-c",
+		fmt.Sprintf("cat > /etc/prometheus/rules/alert_rules.yml << 'EOF'\n%s\nEOF", string(data)))
+
+	if output, err := cmd.CombinedOutput(); err != nil {
+		// 如果直接写入容器失败，尝试使用临时文件+docker cp
+		log.Warn().
+			Err(err).
+			Str("output", string(output)).
+			Msg("Failed to write directly to container, trying docker cp")
+
+		// 写入临时文件
+		tmpFile := "/tmp/prometheus_alert_rules.yml"
+		if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+			return fmt.Errorf("failed to write temp rules file: %w", err)
+		}
+
+		// 使用docker cp复制到容器
+		if err := s.syncRuleFileToContainer(tmpFile); err != nil {
+			return fmt.Errorf("failed to sync to container: %w", err)
+		}
+
+		// 清理临时文件
+		os.Remove(tmpFile)
 	}
 
 	log.Info().
-		Str("file", s.rulesFilePath).
+		Str("container", containerName).
 		Int("groups", len(rules.Groups)).
-		Msg("Prometheus rules file updated locally")
-
-	// 同步到 Prometheus 容器
-	if err := s.syncToPrometheusContainer(); err != nil {
-		log.Warn().Err(err).Msg("Failed to sync rules to Prometheus container")
-		// 不返回错误，因为本地文件已经生成成功
-	}
+		Msg("Prometheus rules file updated in container")
 
 	return nil
 }
@@ -275,8 +282,8 @@ func (s *AlertService) reloadPrometheus() error {
 	return nil
 }
 
-// syncToPrometheusContainer 同步规则文件到本地 Prometheus 容器
-func (s *AlertService) syncToPrometheusContainer() error {
+// syncRuleFileToContainer 同步规则文件到容器
+func (s *AlertService) syncRuleFileToContainer(filePath string) error {
 	// 获取容器名称，默认为 mock-s3-prometheus
 	containerName := os.Getenv("PROMETHEUS_CONTAINER")
 	if containerName == "" {
@@ -293,14 +300,14 @@ func (s *AlertService) syncToPrometheusContainer() error {
 	}
 
 	// 2. 将规则文件拷贝到容器内
-	cmdCopy := exec.Command("docker", "cp", s.rulesFilePath, fmt.Sprintf("%s:/etc/prometheus/rules/alert_rules.yml", containerName))
+	cmdCopy := exec.Command("docker", "cp", filePath, fmt.Sprintf("%s:/etc/prometheus/rules/alert_rules.yml", containerName))
 	if output, err := cmdCopy.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to copy rules file to container: %w, output: %s", err, string(output))
 	}
 
 	log.Info().
 		Str("container", containerName).
-		Str("file", s.rulesFilePath).
+		Str("file", filePath).
 		Msg("Rules synced to Prometheus container")
 
 	// 3. 确保 Prometheus 配置包含 rule_files
