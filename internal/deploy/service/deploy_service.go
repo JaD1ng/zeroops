@@ -68,7 +68,7 @@ func NewDeployService() DeployService {
 	return &floyDeployService{
 		privateKey:    privateKeyPEM,
 		rsaPrivateKey: rsaPrivateKey,
-		port:          "9902", // 默认floy端口
+		port:          "9092", // 默认floy端口
 	}
 }
 
@@ -585,11 +585,13 @@ func (f *floyDeployService) signRequest(req *http.Request) error {
 	// 生成时间戳
 	timestamp := strconv.FormatInt(time.Now().UnixNano(), 10)
 
-	// 计算签名内容：请求体 + URI + 时间戳（修正顺序）
+	// 计算签名内容：请求体 + 时间戳 + URI（与 floy 客户端保持一致）
 	sh := crypto.SHA1.New()
-	sh.Write(bodyBytes)
-	sh.Write([]byte(req.URL.RequestURI()))
+	if len(bodyBytes) > 0 {
+		sh.Write(bodyBytes)
+	}
 	sh.Write([]byte(timestamp))
+	sh.Write([]byte(req.URL.RequestURI()))
 	hash := sh.Sum(nil)
 
 	// RSA签名
@@ -680,8 +682,13 @@ func (f *floyDeployService) pushPackage(instanceIP, service, fversion, version s
 	}
 	defer packageFile.Close()
 
-	// 创建文件字段
-	fileWriter, err := writer.CreateFormFile("file", version)
+	// 创建文件字段，设置 Content-Md5 头
+	header := make(map[string][]string)
+	header["Content-Disposition"] = []string{fmt.Sprintf(`form-data; name="file"; filename="%s"`, version)}
+	header["Content-Type"] = []string{"application/octet-stream"}
+	header["Content-Md5"] = []string{base64.URLEncoding.EncodeToString(md5sum)}
+
+	fileWriter, err := writer.CreatePart(header)
 	if err != nil {
 		return fmt.Errorf("failed to create form file: %v", err)
 	}
@@ -706,8 +713,6 @@ func (f *floyDeployService) pushPackage(instanceIP, service, fversion, version s
 
 	// 设置 Content-Type，包含自动生成的边界
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	// 手动添加 Content-Md5 头
-	req.Header.Set("Content-Md5", base64.URLEncoding.EncodeToString(md5sum))
 
 	// 签名请求
 	if err := f.signRequest(req); err != nil {
@@ -749,8 +754,14 @@ func (f *floyDeployService) pushConfig(instanceIP, service, fversion string) err
 	writer.WriteField("pkgOwner", "qboxserver")
 	writer.WriteField("installDir", "")
 
-	// 创建文件字段
-	fileWriter, err := writer.CreateFormFile("file", "app.conf")
+	// 创建文件字段，设置 Content-Md5 头
+	header := make(map[string][]string)
+	header["Content-Disposition"] = []string{`form-data; name="file"; filename="app.conf"`}
+	header["Content-Type"] = []string{"application/octet-stream"}
+	header["Content-Md5"] = []string{base64.URLEncoding.EncodeToString(configMD5[:])}
+	header["File-Mode"] = []string{"644"}
+
+	fileWriter, err := writer.CreatePart(header)
 	if err != nil {
 		return fmt.Errorf("failed to create form file: %v", err)
 	}
@@ -775,9 +786,6 @@ func (f *floyDeployService) pushConfig(instanceIP, service, fversion string) err
 
 	// 设置 Content-Type，包含自动生成的边界
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	// 手动添加自定义头
-	req.Header.Set("Content-Md5", base64.URLEncoding.EncodeToString(configMD5[:]))
-	req.Header.Set("File-Mode", "644")
 
 	// 签名请求
 	if err := f.signRequest(req); err != nil {
