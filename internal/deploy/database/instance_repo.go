@@ -122,3 +122,41 @@ func (r *InstanceRepo) GetInstanceInfosByServiceNameAndVersion(serviceName, serv
 
 	return instanceInfos, nil
 }
+
+// GetVersionHistoryByInstanceID 根据实例ID获取版本历史记录
+func (r *InstanceRepo) GetVersionHistoryByInstanceID(instanceID string) ([]*model.VersionInfo, error) {
+	// 参数验证
+	if instanceID == "" {
+		return nil, fmt.Errorf("instanceID cannot be empty")
+	}
+
+	query := `
+		SELECT service_version, status
+		FROM version_histories 
+		WHERE instance_id = $1
+		ORDER BY id DESC
+	`
+
+	rows, err := r.db.Query(query, instanceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query version history for instance %s: %w", instanceID, err)
+	}
+	defer rows.Close()
+
+	var versionInfos []*model.VersionInfo
+	for rows.Next() {
+		// 创建新地址，防止后续代码逻辑发生变化出现地址复用问题
+		versionInfo := new(model.VersionInfo)
+		err := rows.Scan(&versionInfo.Version, &versionInfo.Status)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan version history: %w", err)
+		}
+		versionInfos = append(versionInfos, versionInfo)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating version history: %w", err)
+	}
+
+	return versionInfos, nil
+}

@@ -23,6 +23,12 @@ func NewFloyInstanceService() InstanceManager {
 }
 
 func (f *floyInstanceService) GetServiceInstances(serviceName string, version ...string) ([]*model.InstanceInfo, error) {
+	// 参数验证
+	if serviceName == "" {
+		return nil, fmt.Errorf("serviceName cannot be empty")
+	}
+
+	// 获取数据库连接
 	_, err := initDatabase()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize database connection: %w", err)
@@ -47,5 +53,22 @@ func (f *floyInstanceService) GetServiceInstances(serviceName string, version ..
 }
 
 func (f *floyInstanceService) GetInstanceVersionHistory(instanceID string) ([]*model.VersionInfo, error) {
-	return nil, nil
+	// 参数验证
+	if instanceID == "" {
+		return nil, fmt.Errorf("instanceID cannot be empty")
+	}
+
+	// 获取数据库连接
+	_, err := initDatabase()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize database connection: %w", err)
+	}
+
+	// 查询实例版本历史记录
+	versionHistory, err := instanceRepo.GetVersionHistoryByInstanceID(instanceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get version history for instance %s: %w", instanceID, err)
+	}
+
+	return versionHistory, nil
 }
