@@ -34,6 +34,13 @@ type PingResponse struct {
 	WantConfig bool `json:"config"`
 }
 
+// RunRet 运行结果结构
+type RunRet struct {
+	Output string `json:"output"`
+	Stderr string `json:"stderr"`
+	Error  string `json:"err"`
+}
+
 // DeployService 发布服务接口，负责发布和回滚操作的执行
 type DeployService interface {
 	// DeployNewService 在指定主机上部署新服务
@@ -563,6 +570,11 @@ func (f *floyDeployService) deployToSingleInstance(instanceIP, service, version,
 		return fmt.Errorf("版本切换失败: %v", err)
 	}
 
+	// 5. 运行服务
+	if err := f.runService(instanceIP, service, "start.sh", "", 300); err != nil {
+		return fmt.Errorf("运行服务失败: %v", err)
+	}
+
 	return nil
 }
 
@@ -591,6 +603,11 @@ func (f *floyDeployService) rollbackToSingleInstance(instanceIP, service, target
 	// 4. 切换版本（激活回滚版本）
 	if err := f.switchVersion(instanceIP, service, fversion, false); err != nil {
 		return fmt.Errorf("版本切换失败: %v", err)
+	}
+
+	// 5. 运行服务
+	if err := f.runService(instanceIP, service, "start.sh", "", 300); err != nil {
+		return fmt.Errorf("运行服务失败: %v", err)
 	}
 
 	return nil
@@ -878,6 +895,67 @@ func (f *floyDeployService) switchVersion(instanceIP, service, fversion string, 
 	if resp.StatusCode != 200 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("switch failed: status %d, body: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	return nil
+}
+
+// runService 运行服务
+func (f *floyDeployService) runService(instanceIP, service, bashfile, installDir string, timeout int) error {
+	baseURL := fmt.Sprintf("http://%s:%s", instanceIP, f.port)
+
+	// 构造请求参数
+	params := url.Values{}
+	params.Add("service", service)
+	params.Add("bashfile", bashfile)
+	params.Add("installDir", installDir)
+	params.Add("timeout", fmt.Sprintf("%d", timeout))
+
+	// 创建请求
+	req, err := http.NewRequest("POST", baseURL+"/run", strings.NewReader(params.Encode()))
+	if err != nil {
+		return fmt.Errorf("failed to create run request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	// 签名请求
+	if err := f.signRequest(req); err != nil {
+		return fmt.Errorf("failed to sign run request: %v", err)
+	}
+
+	// 发送请求
+	client := &http.Client{Timeout: time.Duration(timeout+60) * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send run request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// 读取响应
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read run response: %v", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("run failed: status %d, body: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// 解析响应结果
+	var result RunRet
+	if err := json.Unmarshal(bodyBytes, &result); err != nil {
+		return fmt.Errorf("failed to parse run response: %v", err)
+	}
+
+	// 检查运行结果
+	if result.Error != "" {
+		return fmt.Errorf("service run error: %s, stderr: %s", result.Error, result.Stderr)
+	}
+
+	// 记录运行输出（可选）
+	if result.Output != "" {
+		fmt.Printf("Service run output: %s\n", result.Output)
 	}
 
 	return nil
