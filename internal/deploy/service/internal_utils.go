@@ -54,37 +54,6 @@ func ValidatePackageURL(packageURL string) error {
 	return nil
 }
 
-// GetServiceInstanceInfos 根据服务名和版本获取实例信息列表，用于内部批量操作
-func GetServiceInstanceInfos(serviceName string, version ...string) ([]*model.InstanceInfo, error) {
-	// 参数验证
-	if serviceName == "" {
-		return nil, fmt.Errorf("serviceName cannot be empty")
-	}
-
-	// 获取数据库连接
-	_, err := initDatabase()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize database connection: %w", err)
-	}
-
-	// 根据是否有版本参数选择不同的查询方法
-	if len(version) > 0 && version[0] != "" {
-		// 有版本参数，按服务名和版本查询
-		instances, err := instanceRepo.GetInstanceInfosByServiceNameAndVersion(serviceName, version[0])
-		if err != nil {
-			return nil, fmt.Errorf("failed to get instances by service name and version: %w", err)
-		}
-		return instances, nil
-	} else {
-		// 无版本参数，只按服务名查询
-		instances, err := instanceRepo.GetInstanceInfosByServiceName(serviceName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get instances by service name: %w", err)
-		}
-		return instances, nil
-	}
-}
-
 // GetInstanceIP 根据实例ID获取实例的IP地址
 func GetInstanceIP(instanceID string) (string, error) {
 	// 参数验证

@@ -23,12 +23,27 @@ func NewFloyInstanceService() InstanceManager {
 }
 
 func (f *floyInstanceService) GetServiceInstances(serviceName string, version ...string) ([]*model.InstanceInfo, error) {
-	// 调用 internal_utils 中已实现的同名函数
-	instances, err := GetServiceInstanceInfos(serviceName, version...)
+	_, err := initDatabase()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get service instances %w", err)
+		return nil, fmt.Errorf("failed to initialize database connection: %w", err)
 	}
-	return instances, nil
+
+	// 根据是否有版本参数选择不同的查询方法
+	if len(version) > 0 && version[0] != "" {
+		// 有版本参数，按服务名和版本查询
+		instances, err := instanceRepo.GetInstanceInfosByServiceNameAndVersion(serviceName, version[0])
+		if err != nil {
+			return nil, fmt.Errorf("failed to get instances by service name and version: %w", err)
+		}
+		return instances, nil
+	} else {
+		// 无版本参数，只按服务名查询
+		instances, err := instanceRepo.GetInstanceInfosByServiceName(serviceName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get instances by service name: %w", err)
+		}
+		return instances, nil
+	}
 }
 
 func (f *floyInstanceService) GetInstanceVersionHistory(instanceID string) ([]*model.VersionInfo, error) {
