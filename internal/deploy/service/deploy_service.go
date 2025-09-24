@@ -1,7 +1,9 @@
 package service
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"crypto"
 	"crypto/md5"
 	"crypto/rand"
@@ -125,7 +127,7 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 	}
 
 	// 3. 下载包文件
-	packageFilePath, md5sum, err := f.downloadPackage(params.PackageURL)
+	packageFilePath, _, err := f.downloadPackage(params.PackageURL)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +137,13 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 	// 4. 计算fversion（暂时不使用，但保留以备将来实现）
 	fversion := f.calculateFversion(params.Service, "prod", params.Version)
 
-	// 5. 获取可用的主机列表
+	// 5. 获取服务基础端口（从包文件中读取）
+	basePort, err := f.getServiceBasePort(packageFilePath, params.Service)
+	if err != nil {
+		return nil, fmt.Errorf("获取服务基础端口失败: %v", err)
+	}
+
+	// 6. 获取可用的主机列表
 	availableHosts, err := GetAvailableHostInfos()
 	if err != nil {
 		return nil, err
@@ -174,12 +182,31 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 			continue
 		}
 		instanceIP := hostIP
-		// 6.5 部署服务到新创建的实例
-		if err := f.deployToSingleInstance(instanceIP, params.Service, params.Version, fversion, packageFilePath, md5sum); err != nil {
+
+		// 6.5 获取实例端口
+		instancePort, err := f.getNextAvailablePort(params.Service, basePort)
+		if err != nil {
+			fmt.Printf("获取实例端口失败: %v\n", err)
+			continue
+		}
+
+		// 6.6 处理包文件（修改配置文件中的端口）
+		modifiedPackagePath, newMd5sum, err := f.processPackageWithPort(packageFilePath, params.Service, instancePort)
+		if err != nil {
+			fmt.Printf("处理包文件失败: %v\n", err)
+			continue
+		}
+		defer os.Remove(modifiedPackagePath) // 清理修改后的包文件
+
+		// 6.7 部署服务到新创建的实例（使用新的MD5值）
+		if err := f.deployToSingleInstance(instanceIP, params.Service, params.Version, fversion, modifiedPackagePath, newMd5sum); err != nil {
 			// 记录错误但继续处理其他实例
 			fmt.Printf("部署到实例 %s (%s) 失败: %v\n", hostIP, hostIP, err)
 			continue
 		}
+
+		// 6.8 记录实例信息到数据库（包含端口）
+		fmt.Printf("实例 %s 部署成功，IP: %s, 端口: %d\n", instanceID, instanceIP, instancePort)
 
 		// TODO: 将实例信息添加到数据库
 
@@ -874,4 +901,287 @@ func (f *floyDeployService) validateRollbackParams(params *model.RollbackParams)
 		return fmt.Errorf("包URL不能为空")
 	}
 	return nil
+}
+
+// getServiceBasePort 从包文件中获取服务基础端口
+func (f *floyDeployService) getServiceBasePort(packagePath, serviceName string) (int, error) {
+	// 1. 创建临时目录
+	tempDir, err := os.MkdirTemp("", "read-config-*")
+	if err != nil {
+		return 0, fmt.Errorf("创建临时目录失败: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// 2. 解压tar.gz到临时目录
+	err = f.extractTarGz(packagePath, tempDir)
+	if err != nil {
+		return 0, fmt.Errorf("解压包文件失败: %v", err)
+	}
+
+	// 3. 读取配置文件
+	configPath := filepath.Join(tempDir, "config.yaml")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return 0, fmt.Errorf("读取配置文件失败: %v", err)
+	}
+
+	// 4. 解析YAML获取端口
+	var config map[string]interface{}
+	err = yaml.Unmarshal(data, &config)
+	if err != nil {
+		return 0, fmt.Errorf("解析配置文件失败: %v", err)
+	}
+
+	// 5. 获取service.port字段
+	if service, ok := config["service"].(map[string]interface{}); ok {
+		if port, ok := service["port"].(int); ok {
+			return port, nil
+		}
+		return 0, fmt.Errorf("配置文件中未找到有效的端口号")
+	}
+
+	return 0, fmt.Errorf("配置文件格式错误，未找到service字段")
+}
+
+// getExistingInstancePorts 查询已存在的实例端口
+func (f *floyDeployService) getExistingInstancePorts(serviceName string) ([]int, error) {
+	// 这里需要数据库连接，暂时返回空切片
+	// TODO: 实现数据库查询逻辑
+	return []int{}, nil
+}
+
+// getNextAvailablePort 获取下一个可用端口
+func (f *floyDeployService) getNextAvailablePort(serviceName string, basePort int) (int, error) {
+	// 查询已存在的端口
+	existingPorts, err := f.getExistingInstancePorts(serviceName)
+	if err != nil {
+		return 0, fmt.Errorf("查询已存在实例端口失败: %v", err)
+	}
+
+	// 找到下一个可用端口
+	port := basePort
+	for {
+		if !f.isPortInUse(port, existingPorts) {
+			return port, nil
+		}
+		port++
+
+		// 防止无限循环，设置最大端口限制
+		if port > basePort+1000 {
+			return 0, fmt.Errorf("无法找到可用端口，已超过最大限制")
+		}
+	}
+}
+
+// isPortInUse 检查端口是否被占用
+func (f *floyDeployService) isPortInUse(port int, existingPorts []int) bool {
+	for _, existingPort := range existingPorts {
+		if port == existingPort {
+			return true
+		}
+	}
+	return false
+}
+
+// processPackageWithPort 处理包文件，修改配置文件中的端口
+func (f *floyDeployService) processPackageWithPort(packagePath, serviceName string, port int) (string, []byte, error) {
+	// 1. 创建临时目录
+	tempDir, err := os.MkdirTemp("", "deploy-*")
+	if err != nil {
+		return "", nil, fmt.Errorf("创建临时目录失败: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// 2. 解压tar.gz到临时目录
+	err = f.extractTarGz(packagePath, tempDir)
+	if err != nil {
+		return "", nil, fmt.Errorf("解压包文件失败: %v", err)
+	}
+
+	// 3. 修改配置文件中的端口
+	err = f.modifyConfigPort(tempDir, serviceName, port)
+	if err != nil {
+		return "", nil, fmt.Errorf("修改配置文件失败: %v", err)
+	}
+
+	// 4. 重新打包到临时目录
+	tempPackagePath := filepath.Join(tempDir, "modified-"+filepath.Base(packagePath))
+	err = f.createTarGz(tempDir, tempPackagePath)
+	if err != nil {
+		return "", nil, fmt.Errorf("重新打包失败: %v", err)
+	}
+
+	// 5. 计算修改后包文件的MD5值
+	newMd5sum, err := f.calculateFileMD5(tempPackagePath)
+	if err != nil {
+		return "", nil, fmt.Errorf("计算MD5失败: %v", err)
+	}
+
+	// 6. 将修改后的包文件移动到系统临时目录，避免被清理
+	finalPackagePath := filepath.Join(os.TempDir(), "modified-"+filepath.Base(packagePath))
+	err = os.Rename(tempPackagePath, finalPackagePath)
+	if err != nil {
+		return "", nil, fmt.Errorf("移动修改后的包文件失败: %v", err)
+	}
+
+	return finalPackagePath, newMd5sum, nil
+}
+
+// calculateFileMD5 计算文件的MD5值
+func (f *floyDeployService) calculateFileMD5(filePath string) ([]byte, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	hash := md5.New()
+	_, err = io.Copy(hash, file)
+	if err != nil {
+		return nil, err
+	}
+
+	return hash.Sum(nil), nil
+}
+
+// extractTarGz 解压tar.gz文件
+func (f *floyDeployService) extractTarGz(src, dest string) error {
+	file, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	gzReader, err := gzip.NewReader(file)
+	if err != nil {
+		return err
+	}
+	defer gzReader.Close()
+
+	tarReader := tar.NewReader(gzReader)
+
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		targetPath := filepath.Join(dest, header.Name)
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			os.MkdirAll(targetPath, os.FileMode(header.Mode))
+		case tar.TypeReg:
+			os.MkdirAll(filepath.Dir(targetPath), 0755)
+			outFile, err := os.Create(targetPath)
+			if err != nil {
+				return err
+			}
+			_, err = io.Copy(outFile, tarReader)
+			outFile.Close()
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// modifyConfigPort 修改配置文件中的端口
+func (f *floyDeployService) modifyConfigPort(tempDir, serviceName string, port int) error {
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	// 读取配置文件
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("读取配置文件失败: %v", err)
+	}
+
+	// 解析YAML
+	var config map[string]interface{}
+	err = yaml.Unmarshal(data, &config)
+	if err != nil {
+		return fmt.Errorf("解析配置文件失败: %v", err)
+	}
+
+	// 修改service.port字段
+	if service, ok := config["service"].(map[string]interface{}); ok {
+		service["port"] = port
+		fmt.Printf("修改服务 %s 端口为: %d\n", serviceName, port)
+	} else {
+		return fmt.Errorf("配置文件格式错误，未找到service字段")
+	}
+
+	// 写回配置文件
+	newData, err := yaml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("序列化配置文件失败: %v", err)
+	}
+
+	err = os.WriteFile(configPath, newData, 0644)
+	if err != nil {
+		return fmt.Errorf("写入配置文件失败: %v", err)
+	}
+
+	return nil
+}
+
+// createTarGz 创建tar.gz文件
+func (f *floyDeployService) createTarGz(src, dest string) error {
+	file, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	gzWriter := gzip.NewWriter(file)
+	defer gzWriter.Close()
+
+	tarWriter := tar.NewWriter(gzWriter)
+	defer tarWriter.Close()
+
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if path == src {
+			return nil
+		}
+
+		header, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		header.Name = relPath
+
+		err = tarWriter.WriteHeader(header)
+		if err != nil {
+			return err
+		}
+
+		if info.Mode().IsRegular() {
+			file, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+
+			_, err = io.Copy(tarWriter, file)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
