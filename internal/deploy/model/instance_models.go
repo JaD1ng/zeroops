@@ -16,7 +16,7 @@ type VersionInfo struct {
 
 // Instance 实例数据库模型
 type Instance struct {
-	ID             int    `json:"id"`              // 自增主键
+	ID             string `json:"id"`              // 实例唯一标识符（必填）
 	ServiceName    string `json:"service_name"`    // 服务名称
 	ServiceVersion string `json:"service_version"` // 服务版本
 	HostID         string `json:"host_id"`         // 主机ID

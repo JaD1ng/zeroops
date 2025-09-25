@@ -1036,8 +1036,15 @@ func (f *floyDeployService) createInstanceRecord(serviceName, serviceVersion, ho
 		return nil, fmt.Errorf("failed to initialize database connection: %w", err)
 	}
 
+	// 生成实例ID
+	instanceID, err := GenerateInstanceID(serviceName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate instance ID: %w", err)
+	}
+
 	// 创建实例记录
 	instance := &model.Instance{
+		ID:             instanceID, // 设置实例ID
 		ServiceName:    serviceName,
 		ServiceVersion: serviceVersion,
 		HostID:         hostID,
@@ -1053,7 +1060,7 @@ func (f *floyDeployService) createInstanceRecord(serviceName, serviceVersion, ho
 		return nil, fmt.Errorf("failed to create instance record: %w", err)
 	}
 
-	fmt.Printf("成功创建实例记录，实例ID: %d\n", instance.ID)
+	fmt.Printf("成功创建实例记录，实例ID: %s\n", instance.ID)
 	return instance, nil
 }
 

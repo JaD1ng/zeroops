@@ -3,7 +3,6 @@ package database
 import (
 	"database/sql"
 	"fmt"
-	"strconv"
 
 	"github.com/qiniu/zeroops/internal/deploy/model"
 )
@@ -70,12 +69,12 @@ func (r *InstanceRepo) GetInstanceInfosByServiceName(serviceName string) ([]*mod
 	var instanceInfos []*model.InstanceInfo
 	for rows.Next() {
 		instanceInfo := new(model.InstanceInfo)
-		var id int
+		var id string
 		err := rows.Scan(&id, &instanceInfo.ServiceVersion, &instanceInfo.Status)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan instance: %w", err)
 		}
-		instanceInfo.InstanceID = strconv.Itoa(id)
+		instanceInfo.InstanceID = id
 		instanceInfo.ServiceName = serviceName // 直接使用参数值
 		instanceInfos = append(instanceInfos, instanceInfo)
 	}
@@ -105,12 +104,12 @@ func (r *InstanceRepo) GetInstanceInfosByServiceNameAndVersion(serviceName, serv
 	var instanceInfos []*model.InstanceInfo
 	for rows.Next() {
 		instanceInfo := new(model.InstanceInfo)
-		var id int
+		var id string
 		err := rows.Scan(&id, &instanceInfo.Status)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan instance: %w", err)
 		}
-		instanceInfo.InstanceID = strconv.Itoa(id)
+		instanceInfo.InstanceID = id
 		instanceInfo.ServiceName = serviceName       // 直接使用参数值
 		instanceInfo.ServiceVersion = serviceVersion // 直接使用参数值
 		instanceInfos = append(instanceInfos, instanceInfo)
@@ -163,14 +162,18 @@ func (r *InstanceRepo) GetVersionHistoryByInstanceID(instanceID string) ([]*mode
 
 // CreateInstance 创建新实例记录
 func (r *InstanceRepo) CreateInstance(instance *model.Instance) error {
+	// 参数验证
+	if instance.ID == "" {
+		return fmt.Errorf("instance ID cannot be empty")
+	}
+
 	query := `
-		INSERT INTO instances (service_name, service_version, host_id, host_ip_address, ip_address, port, status, is_stopped)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id
+		INSERT INTO instances (id, service_name, service_version, host_id, host_ip_address, ip_address, port, status, is_stopped)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
 
-	var id int
-	err := r.db.QueryRow(query,
+	_, err := r.db.Exec(query,
+		instance.ID,
 		instance.ServiceName,
 		instance.ServiceVersion,
 		instance.HostID,
@@ -179,13 +182,12 @@ func (r *InstanceRepo) CreateInstance(instance *model.Instance) error {
 		instance.Port,
 		instance.Status,
 		instance.IsStopped,
-	).Scan(&id)
+	)
 
 	if err != nil {
 		return fmt.Errorf("failed to create instance: %w", err)
 	}
 
-	instance.ID = id
 	return nil
 }
 
