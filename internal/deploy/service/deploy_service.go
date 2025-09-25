@@ -1425,6 +1425,22 @@ func (f *floyDeployService) modifyStartScript(tempDir string, port int) error {
 		return nil
 	}
 
+	// 检查是否已经是新版本的脚本（从配置文件读取端口）
+	if strings.Contains(contentStr, "从配置文件读取端口") {
+		// 如果已经是新版本脚本，只需要更新端口号
+		oldPattern := `SERVICE_PORT="8080"`
+		newPattern := fmt.Sprintf(`SERVICE_PORT="%d"`, port)
+		newContent := strings.Replace(contentStr, oldPattern, newPattern, -1)
+
+		err = os.WriteFile(startScriptPath, []byte(newContent), 0755)
+		if err != nil {
+			return fmt.Errorf("写入启动脚本失败: %v", err)
+		}
+
+		fmt.Printf("更新启动脚本端口，端口: %d\n", port)
+		return nil
+	}
+
 	// 替换环境变量设置，改为从配置文件读取端口
 	oldPattern := `export SERVICE_PORT="${SERVICE_PORT:-8080}"`
 	newPattern := fmt.Sprintf(`# 从配置文件读取端口
