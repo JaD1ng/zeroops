@@ -221,30 +221,51 @@ internal/prometheus_adapter/
   - 更新元信息时，系统根据 `alert_name` + `labels` 查找并更新对应的元信息
 - **缓存机制**：系统在内存中缓存当前的规则和元信息，支持快速增量更新
 
-## Alertmanager 集成
+## 告警接收 Webhook
 
-- 目标：将 Prometheus 触发的告警通过 Alertmanager 转发到监控告警模块
-- `alertmanager.yml` 配置示例：
-```yaml
-global:
-  resolve_timeout: 5m
+- 目标：实现自定义 webhook 服务，主动从 Prometheus 拉取告警并转发到监控告警模块
+- 实现方式：
+  - 通过 Prometheus Alerts API 获取告警
+  - 定期轮询 Prometheus 的 `/api/v1/alerts` 端点
+  - 将获取的告警格式化后 POST 到监控告警模块
 
-route:
-  group_by: ['alertname', 'cluster', 'service']
-  group_wait: 10s
-  group_interval: 10s
-  repeat_interval: 1h
-  receiver: 'zeroops-alert-webhook'
-
-receivers:
-  - name: 'zeroops-alert-webhook'
-    webhook_configs:
-      - url: 'http://alert-module:8080/v1/integrations/alertmanager/webhook'
-        send_resolved: true
+### Webhook 服务架构
 ```
-- 说明：
-  - `url`：监控告警模块的 webhook 地址（按实际部署修改主机与端口）
-  - `send_resolved`：为 `true` 时，告警恢复也会通知
+┌─────────────────┐
+│   Prometheus    │
+│  (告警规则引擎)   │
+└────────┬────────┘
+         │ Pull (轮询)
+         │ GET /api/v1/alerts
+         ▼
+┌─────────────────┐
+│  Alert Webhook  │
+│   （自定义服务）  │
+└────────┬────────┘
+         │ Push
+         │ POST /v1/integrations/prometheus/alerts
+         ▼
+┌─────────────────┐
+│   监控告警模块    │
+│  (告警处理中心)   │
+└─────────────────┘
+```
+
+### 实现细节
+- **轮询机制**：
+  - 每 10 秒从 Prometheus 拉取一次活跃告警
+  - 通过 `GET http://prometheus:9090/api/v1/alerts` 获取告警列表
+  - 维护告警状态缓存，避免重复推送
+
+- **告警格式转换**：
+  - 将 Prometheus 告警格式转换为监控告警模块所需格式
+  - 包含告警名称、标签、严重程度、开始时间等信息
+  - 支持告警恢复状态通知
+
+- **推送目标**：
+  - URL: `http://alert-module:8080/v1/integrations/prometheus/alerts`
+  - Method: POST
+  - Content-Type: application/json
 
 ## 支持的服务
 

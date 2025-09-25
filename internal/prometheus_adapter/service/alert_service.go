@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/qiniu/zeroops/internal/prometheus_adapter/client"
+	promconfig "github.com/qiniu/zeroops/internal/prometheus_adapter/config"
 	"github.com/qiniu/zeroops/internal/prometheus_adapter/model"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
@@ -19,6 +20,7 @@ import (
 // AlertService 告警服务 - 仅负责与Prometheus交互，不存储规则
 type AlertService struct {
 	promClient *client.PrometheusClient
+	config     *promconfig.PrometheusAdapterConfig
 	// 内存中缓存当前规则，用于增量更新
 	currentRules     []model.AlertRule
 	currentRuleMetas []model.AlertRuleMeta
@@ -27,12 +29,13 @@ type AlertService struct {
 }
 
 // NewAlertService 创建告警服务
-func NewAlertService(promClient *client.PrometheusClient) *AlertService {
+func NewAlertService(promClient *client.PrometheusClient, config *promconfig.PrometheusAdapterConfig) *AlertService {
 	service := &AlertService{
 		promClient:       promClient,
+		config:           config,
 		currentRules:     []model.AlertRule{},
 		currentRuleMetas: []model.AlertRuleMeta{},
-		localRulesPath:   "../rules/alert_rules.yml",
+		localRulesPath:   config.AlertRules.LocalFile,
 	}
 
 	// 启动时尝试加载本地规则
@@ -301,12 +304,9 @@ func (s *AlertService) buildPrometheusRules(rules []model.AlertRule, ruleMetas [
 
 	// 为每个元信息生成Prometheus规则
 	for _, meta := range ruleMetas {
-		// 查找对应的规则模板
-		var rule *model.AlertRule
-
 		// 通过 alert_name 直接查找对应的规则模板
 		// AlertRuleMeta.alert_name 关联 AlertRule.name
-		rule = ruleMap[meta.AlertName]
+		var rule *model.AlertRule = ruleMap[meta.AlertName]
 
 		if rule == nil {
 			log.Warn().
@@ -450,10 +450,7 @@ func (s *AlertService) writeRulesFile(rules *model.PrometheusRuleFile) error {
 	}
 
 	// 获取容器名称
-	containerName := os.Getenv("PROMETHEUS_CONTAINER")
-	if containerName == "" {
-		containerName = "mock-s3-prometheus"
-	}
+	containerName := s.config.Prometheus.ContainerName
 
 	// 直接写入到容器内的规则目录
 	// 使用docker exec和echo命令写入文件
@@ -530,10 +527,7 @@ func (s *AlertService) syncRuleFileToContainer(filePath string) error {
 
 // reloadPrometheus 重新加载Prometheus配置
 func (s *AlertService) reloadPrometheus() error {
-	prometheusURL := os.Getenv("PROMETHEUS_ADDRESS")
-	if prometheusURL == "" {
-		prometheusURL = "http://10.210.10.33:9090"
-	}
+	prometheusURL := s.config.Prometheus.Address
 
 	reloadURL := fmt.Sprintf("%s/-/reload", strings.TrimSuffix(prometheusURL, "/"))
 
@@ -544,7 +538,7 @@ func (s *AlertService) reloadPrometheus() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Prometheus reload failed with status: %d", resp.StatusCode)
+		return fmt.Errorf("prometheus reload failed with status: %d", resp.StatusCode)
 	}
 
 	log.Info().Msg("Prometheus configuration reloaded")

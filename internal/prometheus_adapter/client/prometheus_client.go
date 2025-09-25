@@ -2,18 +2,24 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"time"
 
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	promModel "github.com/prometheus/common/model"
 	"github.com/qiniu/zeroops/internal/prometheus_adapter/model"
+	"github.com/rs/zerolog/log"
 )
 
 // PrometheusClient Prometheus 客户端
 type PrometheusClient struct {
-	api v1.API
+	api        v1.API
+	httpClient *http.Client
+	baseURL    string
 }
 
 // NewPrometheusClient 创建新的 Prometheus 客户端
@@ -26,7 +32,9 @@ func NewPrometheusClient(address string) (*PrometheusClient, error) {
 	}
 
 	return &PrometheusClient{
-		api: v1.NewAPI(client),
+		api:        v1.NewAPI(client),
+		httpClient: &http.Client{Timeout: 10 * time.Second},
+		baseURL:    address,
 	}, nil
 }
 
@@ -141,4 +149,36 @@ func BuildQuery(service, metric, version string) string {
 
 	query += "}"
 	return query
+}
+
+// GetAlerts 获取 Prometheus 当前的告警
+func (c *PrometheusClient) GetAlerts(ctx context.Context) (*model.PrometheusAlertsResponse, error) {
+	url := fmt.Sprintf("%s/api/v1/alerts", c.baseURL)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query alerts: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("prometheus returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var alertsResp model.PrometheusAlertsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&alertsResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	log.Debug().
+		Int("alert_count", len(alertsResp.Data.Alerts)).
+		Msg("Retrieved alerts from Prometheus")
+
+	return &alertsResp, nil
 }

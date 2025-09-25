@@ -50,6 +50,7 @@ fi
 # 创建构建目录
 log_info "创建构建目录..."
 mkdir -p "$BUILD_DIR/bin"
+mkdir -p "$BUILD_DIR/config"
 mkdir -p "$BUILD_DIR/docs"
 mkdir -p "$BUILD_DIR/scripts"
 mkdir -p "$BUILD_DIR/rules"
@@ -65,6 +66,15 @@ CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build \
 if [ $? -ne 0 ]; then
     log_error "编译失败"
     exit 1
+fi
+
+# 复制配置文件
+log_info "复制配置文件..."
+if [ -f "internal/${APP_NAME}/config/prometheus_adapter.yml" ]; then
+    cp "internal/${APP_NAME}/config/prometheus_adapter.yml" "$BUILD_DIR/config/"
+    log_info "已复制配置文件到 $BUILD_DIR/config/"
+else
+    log_warn "未找到配置文件，使用默认配置"
 fi
 
 # 复制文档
@@ -104,14 +114,10 @@ cat > "$BUILD_DIR/start.sh" << 'EOF'
 
 # Prometheus Adapter 启动脚本
 
-# 默认配置
-PROMETHEUS_URL=${PROMETHEUS_URL:-"http://localhost:9090"}
-PORT=${PORT:-8080}
-LOG_LEVEL=${LOG_LEVEL:-"info"}
-
 # 获取脚本所在目录
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 BIN_PATH="$SCRIPT_DIR/bin/prometheus_adapter"
+CONFIG_FILE="$SCRIPT_DIR/config/prometheus_adapter.yml"
 
 # 检查二进制文件
 if [ ! -f "$BIN_PATH" ]; then
@@ -119,19 +125,26 @@ if [ ! -f "$BIN_PATH" ]; then
     exit 1
 fi
 
-# 启动参数
-ARGS=""
-ARGS="$ARGS --prometheus-url=$PROMETHEUS_URL"
-ARGS="$ARGS --port=$PORT"
-ARGS="$ARGS --log-level=$LOG_LEVEL"
+# 检查配置文件
+if [ -f "$CONFIG_FILE" ]; then
+    echo "使用配置文件: $CONFIG_FILE"
+else
+    echo "警告: 找不到配置文件 $CONFIG_FILE，将使用默认配置"
+fi
+
+# 环境变量（可选，用于覆盖配置文件）
+# export PROMETHEUS_ADDRESS="http://localhost:9090"
+# export ALERT_WEBHOOK_URL="http://alert-module:8080/v1/integrations/prometheus/alerts"
+# export ALERT_POLLING_INTERVAL="10s"
+# export SERVER_BIND_ADDR="0.0.0.0:9999"
 
 echo "启动 Prometheus Adapter..."
-echo "Prometheus URL: $PROMETHEUS_URL"
-echo "监听端口: $PORT"
-echo "日志级别: $LOG_LEVEL"
+
+# 切换到 bin 目录，以便程序能正确找到相对路径的配置文件
+cd "$SCRIPT_DIR"
 
 # 启动服务
-exec "$BIN_PATH" $ARGS
+exec "$BIN_PATH"
 EOF
 chmod +x "$BUILD_DIR/start.sh"
 
