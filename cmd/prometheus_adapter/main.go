@@ -20,22 +20,28 @@ func main() {
 
 	log.Info().Msg("Starting Prometheus Adapter server")
 
-	// 加载配置
-	cfg := &config.Config{
-		Server: config.ServerConfig{
-			BindAddr: ":9999", // 默认端口
-		},
-	}
-
-	// 如果有环境变量，使用环境变量的端口
-	if port := os.Getenv("ADAPTER_PORT"); port != "" {
-		cfg.Server.BindAddr = ":" + port
-	}
-
-	// 创建 Prometheus Adapter 服务器
-	adapter, err := prometheusadapter.NewPrometheusAdapterServer(cfg)
+	// 加载 Prometheus Adapter 配置
+	adapter, err := prometheusadapter.NewPrometheusAdapterServer(&config.Config{})
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create Prometheus Adapter server")
+	}
+
+	// 获取 Prometheus Adapter 内部配置的绑定地址
+	bindAddr := ":9999" // 默认端口
+	if adapter.GetBindAddr() != "" {
+		bindAddr = adapter.GetBindAddr()
+	}
+
+	// 如果有环境变量，优先使用环境变量的端口
+	if port := os.Getenv("ADAPTER_PORT"); port != "" {
+		bindAddr = ":" + port
+	}
+
+	// 更新配置（虽然已经创建了 adapter，但需要端口信息用于启动服务器）
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			BindAddr: bindAddr,
+		},
 	}
 
 	// 创建路由
