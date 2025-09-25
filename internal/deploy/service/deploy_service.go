@@ -216,7 +216,7 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 		fmt.Printf("实例 %s 部署成功，IP: %s, 端口: %d\n", instanceID, instanceIP, instancePort)
 
 		// 6.9 将实例信息添加到数据库
-		_, err = f.createInstanceRecord(params.Service, params.Version, selectedHost.HostID, hostIP, instanceIP, instancePort)
+		_, err = f.createInstanceRecord(instanceID, params.Service, params.Version, selectedHost.HostID, hostIP, instanceIP, instancePort)
 		if err != nil {
 			fmt.Printf("创建实例记录失败: %v\n", err)
 			// 继续处理，不因为数据库错误而中断部署流程
@@ -1029,22 +1029,16 @@ func (f *floyDeployService) runService(instanceIP, service, bashfile, installDir
 }
 
 // createInstanceRecord 创建实例记录到数据库
-func (f *floyDeployService) createInstanceRecord(serviceName, serviceVersion, hostID, hostIP, instanceIP string, port int) (*model.Instance, error) {
+func (f *floyDeployService) createInstanceRecord(instanceID, serviceName, serviceVersion, hostID, hostIP, instanceIP string, port int) (*model.Instance, error) {
 	// 初始化数据库连接
 	_, err := initDatabase()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize database connection: %w", err)
 	}
 
-	// 生成实例ID
-	instanceID, err := GenerateInstanceID(serviceName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate instance ID: %w", err)
-	}
-
 	// 创建实例记录
 	instance := &model.Instance{
-		ID:             instanceID, // 设置实例ID
+		ID:             instanceID, // 使用传入的实例ID
 		ServiceName:    serviceName,
 		ServiceVersion: serviceVersion,
 		HostID:         hostID,
