@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/qiniu/zeroops/internal/prometheus_adapter/client"
@@ -20,15 +22,167 @@ type AlertService struct {
 	// 内存中缓存当前规则，用于增量更新
 	currentRules     []model.AlertRule
 	currentRuleMetas []model.AlertRuleMeta
+	// 本地规则文件路径
+	localRulesPath string
 }
 
 // NewAlertService 创建告警服务
 func NewAlertService(promClient *client.PrometheusClient) *AlertService {
-	return &AlertService{
+	service := &AlertService{
 		promClient:       promClient,
 		currentRules:     []model.AlertRule{},
 		currentRuleMetas: []model.AlertRuleMeta{},
+		localRulesPath:   "../rules/alert_rules.yml",
 	}
+
+	// 启动时尝试加载本地规则
+	if err := service.LoadRulesFromFile(); err != nil {
+		log.Warn().Err(err).Msg("Failed to load rules from file, starting with empty rules")
+	}
+
+	return service
+}
+
+// ========== 持久化方法 ==========
+
+// LoadRulesFromFile 从本地文件加载规则
+func (s *AlertService) LoadRulesFromFile() error {
+	// 检查文件是否存在
+	if _, err := os.Stat(s.localRulesPath); os.IsNotExist(err) {
+		log.Info().Str("path", s.localRulesPath).Msg("Local rules file does not exist, skipping load")
+		return nil
+	}
+
+	// 读取文件内容
+	data, err := os.ReadFile(s.localRulesPath)
+	if err != nil {
+		return fmt.Errorf("failed to read local rules file: %w", err)
+	}
+
+	// 解析规则文件
+	var rulesFile model.PrometheusRuleFile
+	if err := yaml.Unmarshal(data, &rulesFile); err != nil {
+		return fmt.Errorf("failed to parse rules file: %w", err)
+	}
+
+	// 从Prometheus格式转换回内部格式
+	s.currentRules = []model.AlertRule{}
+	s.currentRuleMetas = []model.AlertRuleMeta{}
+
+	// 用于去重的map
+	ruleMap := make(map[string]*model.AlertRule)
+
+	for _, group := range rulesFile.Groups {
+		for _, rule := range group.Rules {
+			// 提取基础规则信息
+			ruleName := rule.Alert
+
+			// 从annotations中获取description
+			description := ""
+			if desc, ok := rule.Annotations["description"]; ok {
+				description = desc
+			}
+
+			// 从labels中获取severity
+			severity := "warning"
+			if sev, ok := rule.Labels["severity"]; ok {
+				severity = sev
+				delete(rule.Labels, "severity") // 移除severity，剩下的是meta的labels
+			}
+
+			// 创建或更新规则模板
+			if _, exists := ruleMap[ruleName]; !exists {
+				alertRule := model.AlertRule{
+					Name:        ruleName,
+					Description: description,
+					Expr:        rule.Expr,
+					Severity:    severity,
+				}
+
+				// 解析For字段获取WatchTime
+				if rule.For != "" {
+					// 简单解析，假设格式为 "300s" 或 "5m"
+					if strings.HasSuffix(rule.For, "s") {
+						if seconds, err := strconv.Atoi(strings.TrimSuffix(rule.For, "s")); err == nil {
+							alertRule.WatchTime = seconds
+						}
+					} else if strings.HasSuffix(rule.For, "m") {
+						if minutes, err := strconv.Atoi(strings.TrimSuffix(rule.For, "m")); err == nil {
+							alertRule.WatchTime = minutes * 60
+						}
+					}
+				}
+
+				ruleMap[ruleName] = &alertRule
+				s.currentRules = append(s.currentRules, alertRule)
+			}
+
+			// 创建元信息
+			if len(rule.Labels) > 0 {
+				labelsJSON, _ := json.Marshal(rule.Labels)
+				meta := model.AlertRuleMeta{
+					AlertName: ruleName,
+					Labels:    string(labelsJSON),
+				}
+
+				// 从表达式中提取threshold（简单实现）
+				// 假设表达式类似 "metric > 80" 或 "metric{labels} > 80"
+				parts := strings.Split(rule.Expr, " ")
+				if len(parts) >= 3 {
+					if threshold, err := strconv.ParseFloat(parts[len(parts)-1], 64); err == nil {
+						meta.Threshold = threshold
+					}
+				}
+
+				s.currentRuleMetas = append(s.currentRuleMetas, meta)
+			}
+		}
+	}
+
+	log.Info().
+		Int("rules", len(s.currentRules)).
+		Int("metas", len(s.currentRuleMetas)).
+		Str("path", s.localRulesPath).
+		Msg("Loaded rules from local file")
+
+	return nil
+}
+
+// SaveRulesToFile 保存规则到本地文件
+func (s *AlertService) SaveRulesToFile() error {
+	// 确保目录存在
+	dir := filepath.Dir(s.localRulesPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create rules directory: %w", err)
+	}
+
+	// 构建Prometheus规则文件格式
+	prometheusRules := s.buildPrometheusRules(s.currentRules, s.currentRuleMetas)
+
+	// 序列化为YAML
+	data, err := yaml.Marshal(prometheusRules)
+	if err != nil {
+		return fmt.Errorf("failed to marshal rules: %w", err)
+	}
+
+	// 写入文件
+	if err := os.WriteFile(s.localRulesPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write rules file: %w", err)
+	}
+
+	log.Info().
+		Int("rules", len(s.currentRules)).
+		Int("metas", len(s.currentRuleMetas)).
+		Str("path", s.localRulesPath).
+		Msg("Saved rules to local file")
+
+	return nil
+}
+
+// Shutdown 优雅关闭，保存当前规则
+func (s *AlertService) Shutdown() error {
+	log.Info().Msg("Shutting down alert service, saving rules...")
+	return s.SaveRulesToFile()
 }
 
 // ========== 公开 API 方法 ==========

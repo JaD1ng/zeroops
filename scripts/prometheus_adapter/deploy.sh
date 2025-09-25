@@ -235,11 +235,19 @@ if [ -w "$DEPLOY_DIR" ]; then
     chmod +x "$DEPLOY_DIR/start.sh"
     chmod +x "$DEPLOY_DIR/stop.sh"
     [ -f "$DEPLOY_DIR/scripts/test_alert_update.sh" ] && chmod +x "$DEPLOY_DIR/scripts/test_alert_update.sh"
+    # 确保 rules 目录可写
+    chmod 755 "$DEPLOY_DIR/rules"
+    [ -f "$DEPLOY_DIR/rules/alert_rules.yml" ] && chmod 644 "$DEPLOY_DIR/rules/alert_rules.yml"
 else
     sudo chmod +x "$DEPLOY_DIR/bin/prometheus_adapter"
     sudo chmod +x "$DEPLOY_DIR/start.sh"
     sudo chmod +x "$DEPLOY_DIR/stop.sh"
     [ -f "$DEPLOY_DIR/scripts/test_alert_update.sh" ] && sudo chmod +x "$DEPLOY_DIR/scripts/test_alert_update.sh"
+    # 确保 rules 目录可写
+    sudo chmod 755 "$DEPLOY_DIR/rules"
+    [ -f "$DEPLOY_DIR/rules/alert_rules.yml" ] && sudo chmod 644 "$DEPLOY_DIR/rules/alert_rules.yml"
+    # 设置 rules 目录的所有者为服务运行用户
+    sudo chown -R qboxserver:qboxserver "$DEPLOY_DIR/rules"
 fi
 
 # 清理临时目录
@@ -277,7 +285,7 @@ After=network.target
 Type=simple
 User=qboxserver
 Group=qboxserver
-WorkingDirectory=$DEPLOY_DIR
+WorkingDirectory=$DEPLOY_DIR/bin
 Environment="PROMETHEUS_URL=http://localhost:9090"
 Environment="PORT=8080"
 Environment="LOG_LEVEL=info"

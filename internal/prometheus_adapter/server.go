@@ -1,6 +1,7 @@
 package prometheusadapter
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -63,9 +64,18 @@ func (s *PrometheusAdapterServer) UseApi(router *fox.Engine) error {
 	return nil
 }
 
-// Close 关闭服务器
-func (s *PrometheusAdapterServer) Close() error {
-	// 当前没有需要关闭的资源
-	log.Info().Msg("Prometheus Adapter server closed")
+// Close 优雅关闭服务器
+func (s *PrometheusAdapterServer) Close(ctx context.Context) error {
+	log.Info().Msg("Starting shutdown...")
+
+	// 调用 alertService 的 Shutdown 方法保存规则
+	if s.alertService != nil {
+		if err := s.alertService.Shutdown(); err != nil {
+			log.Error().Err(err).Msg("Failed to shutdown alert service")
+			return err
+		}
+	}
+
+	log.Info().Msg("Prometheus Adapter server shut down")
 	return nil
 }

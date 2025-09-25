@@ -1,7 +1,11 @@
 package main
 
 import (
+	"context"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/fox-gonic/fox"
 	"github.com/qiniu/zeroops/internal/config"
@@ -42,9 +46,40 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to setup API routes")
 	}
 
-	// 启动服务器
-	log.Info().Msgf("Starting Prometheus Adapter on %s", cfg.Server.BindAddr)
-	if err := router.Run(cfg.Server.BindAddr); err != nil {
-		log.Fatal().Err(err).Msg("Failed to start server")
+	// 设置信号处理
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// 创建一个用于优雅关闭的context
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 在goroutine中启动服务器
+	serverErr := make(chan error, 1)
+	go func() {
+		log.Info().Msgf("Starting Prometheus Adapter on %s", cfg.Server.BindAddr)
+		if err := router.Run(cfg.Server.BindAddr); err != nil {
+			serverErr <- err
+		}
+	}()
+
+	// 等待信号或服务器错误
+	select {
+	case sig := <-sigChan:
+		log.Info().Msgf("Received signal %s, shutting down...", sig)
+
+		// 创建超时context
+		shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 10*time.Second)
+		defer shutdownCancel()
+
+		// 调用adapter的Shutdown方法
+		if err := adapter.Close(shutdownCtx); err != nil {
+			log.Error().Err(err).Msg("Error during shutdown")
+		}
+
+		log.Info().Msg("Shutdown complete")
+
+	case err := <-serverErr:
+		log.Fatal().Err(err).Msg("Server error")
 	}
 }

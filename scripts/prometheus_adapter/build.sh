@@ -52,6 +52,7 @@ log_info "创建构建目录..."
 mkdir -p "$BUILD_DIR/bin"
 mkdir -p "$BUILD_DIR/docs"
 mkdir -p "$BUILD_DIR/scripts"
+mkdir -p "$BUILD_DIR/rules"
 
 # 编译二进制文件
 log_info "编译 ${APP_NAME}..."
@@ -77,6 +78,23 @@ log_info "复制脚本..."
 if [ -f "internal/${APP_NAME}/test_alert_update.sh" ]; then
     cp "internal/${APP_NAME}/test_alert_update.sh" "$BUILD_DIR/scripts/"
     chmod +x "$BUILD_DIR/scripts/test_alert_update.sh"
+fi
+
+# 复制规则文件
+log_info "复制规则文件..."
+if [ -d "internal/${APP_NAME}/rules" ]; then
+    cp -r "internal/${APP_NAME}/rules/"* "$BUILD_DIR/rules/" 2>/dev/null || true
+    log_info "已复制规则文件到 $BUILD_DIR/rules/"
+else
+    # 如果没有规则文件夹，创建一个空的规则文件
+    log_warn "未找到规则目录，创建默认规则文件..."
+    cat > "$BUILD_DIR/rules/alert_rules.yml" << 'RULES_EOF'
+# Prometheus Alert Rules
+# This file is managed by the Prometheus Adapter service
+# It will be loaded on startup and saved on shutdown
+
+groups: []
+RULES_EOF
 fi
 
 # 创建启动脚本
