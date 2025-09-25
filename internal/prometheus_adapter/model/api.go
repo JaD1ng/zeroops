@@ -46,6 +46,7 @@ type UpdateAlertRuleRequest struct {
 	Expr        string `json:"expr,omitempty"`
 	Op          string `json:"op,omitempty" binding:"omitempty,oneof=> < = !="`
 	Severity    string `json:"severity,omitempty"`
+	WatchTime   int    `json:"watch_time,omitempty"` // 持续时长（秒）
 }
 
 // CreateAlertRuleMetaRequest 创建告警规则元信息请求
@@ -57,17 +58,13 @@ type CreateAlertRuleMetaRequest struct {
 	MatchTime string            `json:"match_time,omitempty"`
 }
 
-// UpdateAlertRuleMetaRequest 更新告警规则元信息请求
+// UpdateAlertRuleMetaRequest 批量更新告警规则元信息请求
 type UpdateAlertRuleMetaRequest struct {
-	AlertName string  `json:"alert_name" binding:"required"`
-	Labels    string  `json:"labels" binding:"required"`
-	Threshold float64 `json:"threshold"`
-	WatchTime int     `json:"watch_time"`
+	Metas []AlertRuleMetaUpdate `json:"metas" binding:"required"`
 }
 
-// SyncRulesRequest 同步规则请求
-// 从监控告警模块发送过来的完整规则列表
-type SyncRulesRequest struct {
-	Rules     []AlertRule     `json:"rules"`      // 告警规则列表
-	RuleMetas []AlertRuleMeta `json:"rule_metas"` // 规则元信息列表
+// AlertRuleMetaUpdate 单个规则元信息更新项
+type AlertRuleMetaUpdate struct {
+	Labels    string  `json:"labels" binding:"required"` // 必填，用于唯一标识
+	Threshold float64 `json:"threshold"`
 }

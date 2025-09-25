@@ -10,7 +10,7 @@
 - 架构设计
 - API 参考
   - 指标查询
-  - 告警规则同步
+  - 告警规则管理
 - Alertmanager 集成
 - 支持的服务
 - 错误码
@@ -36,7 +36,7 @@ internal/prometheus_adapter/
 ├── api/                   # API 层，处理 HTTP 请求
 │   ├── api.go            # API 基础结构和初始化
 │   ├── metric_api.go     # 指标相关的 API 处理器
-│   └── alert_api.go      # 告警规则同步 API 处理器
+│   └── alert_api.go      # 告警规则管理 API 处理器
 ├── service/               # 业务逻辑层
 │   ├── metric_service.go # 指标查询服务实现
 │   └── alert_service.go  # 告警规则同步服务实现
@@ -137,42 +137,9 @@ internal/prometheus_adapter/
 }
 ```
 
-### 告警规则同步
+### 告警规则管理
 
-#### 1. 全量同步规则
-- 方法与路径：`POST /v1/alert-rules/sync`
-- 功能：接收监控告警模块发送的完整规则列表，生成 Prometheus 规则文件并触发重载（全量同步）
-- 请求体示例：
-```json
-{
-  "rules": [
-    {
-      "name": "high_cpu_usage",
-      "description": "CPU使用率过高告警",
-      "expr": "system_cpu_usage_percent",
-      "op": ">",
-      "severity": "warning"
-    }
-  ],
-  "rule_metas": [
-    {
-      "alert_name": "high_cpu_usage",  // 与规则模板的name字段保持一致
-      "labels": "{\"service\":\"storage-service\",\"version\":\"1.0.0\"}",
-      "threshold": 90,
-      "watch_time": 300
-    }
-  ]
-}
-```
-- 响应示例：
-```json
-{
-  "status": "success",
-  "message": "Rules synced to Prometheus"
-}
-```
-
-#### 2. 更新单个规则模板
+#### 1. 更新单个规则模板
 - 方法与路径：`PUT /v1/alert-rules/:rule_name`
 - 功能：更新指定的告警规则模板，系统会自动查找所有使用该规则的元信息并重新生成 Prometheus 规则
 - 路径参数：
@@ -183,7 +150,8 @@ internal/prometheus_adapter/
   "description": "CPU使用率异常告警（更新后）",
   "expr": "avg(system_cpu_usage_percent)",
   "op": ">=",
-  "severity": "critical"
+  "severity": "critical",
+  "watch_time": 300
 }
 ```
 - 响应示例：
@@ -195,25 +163,33 @@ internal/prometheus_adapter/
 }
 ```
 
-#### 3. 更新单个规则元信息
-- 方法与路径：`PUT /v1/alert-rules/meta`
-- 功能：更新指定规则的元信息，系统会根据对应的规则模板重新生成 Prometheus 规则
+#### 2. 批量更新规则元信息
+- 方法与路径：`PUT /v1/alert-rules-meta/:rule_name`
+- 功能：批量更新指定规则的元信息，系统会根据对应的规则模板重新生成 Prometheus 规则
+- 路径参数：
+  - `rule_name`：规则名称（如 `high_cpu_usage`）
 - 请求体示例：
 ```json
 {
-  "rule_name": "high_cpu_usage",  // 必填，对应规则模板的name
-  "labels": "{\"service\":\"storage-service\",\"version\":\"2.0.0\"}",  // 必填，用于唯一标识
-  "threshold": 85,
-  "watch_time": 600
+  "metas": [
+    {
+      "labels": "{\"service\":\"storage-service\",\"version\":\"1.0.0\"}",  // 必填，用于唯一标识
+      "threshold": 85
+    },
+    {
+      "labels": "{\"service\":\"storage-service\",\"version\":\"2.0.0\"}",  // 必填，用于唯一标识
+      "threshold": 90
+    }
+  ]
 }
 ```
 - 响应示例：
 ```json
 {
   "status": "success",
-  "message": "Rule meta updated and synced to Prometheus",
+  "message": "Rule metas updated and synced to Prometheus",
   "rule_name": "high_cpu_usage",
-  "labels": "{\"service\":\"storage-service\",\"version\":\"2.0.0\"}"
+  "updated_count": 2
 }
 ```
 
@@ -232,11 +208,11 @@ internal/prometheus_adapter/
   - `expr`：PromQL 表达式，如 `sum(apitime) by (service, version)`，可包含时间范围
   - `op`：比较操作符（`>`, `<`, `=`, `!=`）
   - `severity`：告警等级，通常进入告警的 labels.severity
+  - `watch_time`：持续时间（秒），对应 Prometheus 的 `for` 字段
 - **AlertRuleMeta（元信息）**：
   - `alert_name`：关联的规则名称（对应 alert_rules.name）
   - `labels`：JSON 格式的标签，用于筛选特定服务（如 `{"service":"s3","version":"v1"}`）
   - `threshold`：告警阈值
-  - `watch_time`：持续时间（秒），对应 Prometheus 的 `for` 字段
 
 #### 增量更新说明
 - **增量更新**：新接口支持增量更新，只需传入需要修改的字段

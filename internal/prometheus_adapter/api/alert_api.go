@@ -10,32 +10,8 @@ import (
 
 // setupAlertRouters 设置告警相关路由
 func (api *Api) setupAlertRouters(router *fox.Engine) {
-	router.POST("/v1/alert-rules/sync", api.SyncRules)
 	router.PUT("/v1/alert-rules/:rule_name", api.UpdateRule)
-	router.PUT("/v1/alert-rules/meta", api.UpdateRuleMeta)
-}
-
-// SyncRules 同步规则到Prometheus
-// 接收从监控告警模块发来的规则列表，生成Prometheus规则文件并重载配置
-func (api *Api) SyncRules(c *fox.Context) {
-	var req model.SyncRulesRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		SendErrorResponse(c, http.StatusBadRequest, model.ErrorCodeInvalidParameter,
-			"Invalid request body: "+err.Error(), nil)
-		return
-	}
-
-	err := api.alertService.SyncRulesToPrometheus(req.Rules, req.RuleMetas)
-	if err != nil {
-		SendErrorResponse(c, http.StatusInternalServerError, model.ErrorCodeInternalError,
-			"Failed to sync rules to Prometheus: "+err.Error(), nil)
-		return
-	}
-
-	c.JSON(http.StatusOK, map[string]string{
-		"status":  "success",
-		"message": "Rules synced to Prometheus",
-	})
+	router.PUT("/v1/alert-rules-meta/:rule_name", api.UpdateRuleMetas)
 }
 
 // UpdateRule 更新单个规则模板
@@ -62,6 +38,7 @@ func (api *Api) UpdateRule(c *fox.Context) {
 		Expr:        req.Expr,
 		Op:          req.Op,
 		Severity:    req.Severity,
+		WatchTime:   req.WatchTime,
 	}
 
 	err := api.alertService.UpdateRule(rule)
@@ -81,9 +58,16 @@ func (api *Api) UpdateRule(c *fox.Context) {
 	})
 }
 
-// UpdateRuleMeta 更新单个规则元信息
-// 通过 alert_name + labels 唯一确定一个元信息记录
-func (api *Api) UpdateRuleMeta(c *fox.Context) {
+// UpdateRuleMetas 批量更新规则元信息
+// 通过 rule_name + labels 唯一确定一个元信息记录
+func (api *Api) UpdateRuleMetas(c *fox.Context) {
+	ruleName := c.Param("rule_name")
+	if ruleName == "" {
+		SendErrorResponse(c, http.StatusBadRequest, model.ErrorCodeInvalidParameter,
+			"Rule name is required", nil)
+		return
+	}
+
 	var req model.UpdateAlertRuleMetaRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		SendErrorResponse(c, http.StatusBadRequest, model.ErrorCodeInvalidParameter,
@@ -91,32 +75,35 @@ func (api *Api) UpdateRuleMeta(c *fox.Context) {
 		return
 	}
 
-	// alert_name 和 labels 是必填的
-	if req.AlertName == "" || req.Labels == "" {
+	if len(req.Metas) == 0 {
 		SendErrorResponse(c, http.StatusBadRequest, model.ErrorCodeInvalidParameter,
-			"alert_name and labels are required", nil)
+			"At least one meta update is required", nil)
 		return
 	}
 
-	// 构建完整的元信息对象
-	meta := model.AlertRuleMeta{
-		AlertName: req.AlertName,
-		Labels:    req.Labels,
-		Threshold: req.Threshold,
-		WatchTime: req.WatchTime,
-	}
+	// 批量更新元信息
+	updatedCount := 0
+	for _, metaUpdate := range req.Metas {
+		// 构建完整的元信息对象
+		meta := model.AlertRuleMeta{
+			AlertName: ruleName,
+			Labels:    metaUpdate.Labels,
+			Threshold: metaUpdate.Threshold,
+		}
 
-	err := api.alertService.UpdateRuleMeta(meta)
-	if err != nil {
-		SendErrorResponse(c, http.StatusInternalServerError, model.ErrorCodeInternalError,
-			"Failed to update rule meta: "+err.Error(), nil)
-		return
+		err := api.alertService.UpdateRuleMeta(meta)
+		if err != nil {
+			SendErrorResponse(c, http.StatusInternalServerError, model.ErrorCodeInternalError,
+				fmt.Sprintf("Failed to update rule meta: %v", err), nil)
+			return
+		}
+		updatedCount++
 	}
 
 	c.JSON(http.StatusOK, map[string]interface{}{
-		"status":     "success",
-		"message":    "Rule meta updated and synced to Prometheus",
-		"alert_name": req.AlertName,
-		"labels":     req.Labels,
+		"status":        "success",
+		"message":       "Rule metas updated and synced to Prometheus",
+		"rule_name":     ruleName,
+		"updated_count": updatedCount,
 	})
 }

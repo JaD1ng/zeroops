@@ -31,15 +31,88 @@ func NewAlertService(promClient *client.PrometheusClient) *AlertService {
 	}
 }
 
-// SyncRulesToPrometheus 同步规则到Prometheus
-// 接收完整的规则列表，生成Prometheus规则文件并重载配置
-func (s *AlertService) SyncRulesToPrometheus(rules []model.AlertRule, ruleMetas []model.AlertRuleMeta) error {
-	// 保存到内存缓存
-	s.currentRules = rules
-	s.currentRuleMetas = ruleMetas
+// ========== 公开 API 方法 ==========
 
+// UpdateRule 更新单个规则模板
+// 只更新传入的规则，其他规则和所有元信息保持不变
+func (s *AlertService) UpdateRule(rule model.AlertRule) error {
+	// 查找并更新规则
+	found := false
+	for i, r := range s.currentRules {
+		if r.Name == rule.Name {
+			s.currentRules[i] = rule
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		// 如果规则不存在，添加新规则
+		s.currentRules = append(s.currentRules, rule)
+	}
+
+	// 统计受影响的元信息数量
+	affectedCount := 0
+	for _, meta := range s.currentRuleMetas {
+		if meta.AlertName == rule.Name {
+			affectedCount++
+		}
+	}
+
+	log.Info().
+		Str("rule", rule.Name).
+		Int("affected_metas", affectedCount).
+		Msg("Updating rule and affected metas")
+
+	// 使用更新后的规则重新生成并同步
+	return s.regenerateAndSync()
+}
+
+// UpdateRuleMeta 更新单个规则元信息
+// 通过 alert_name + labels 唯一确定一个元信息记录
+func (s *AlertService) UpdateRuleMeta(meta model.AlertRuleMeta) error {
+	// 查找并更新元信息
+	found := false
+	for i, m := range s.currentRuleMetas {
+		// 通过 alert_name + labels 唯一确定
+		if m.AlertName == meta.AlertName && m.Labels == meta.Labels {
+			s.currentRuleMetas[i] = meta
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		// 如果元信息不存在，添加新元信息
+		s.currentRuleMetas = append(s.currentRuleMetas, meta)
+	}
+
+	log.Info().
+		Str("alert_name", meta.AlertName).
+		Str("labels", meta.Labels).
+		Msg("Updating rule meta")
+
+	// 使用更新后的元信息重新生成并同步
+	return s.regenerateAndSync()
+}
+
+// GetAffectedMetas 获取受影响的元信息数量
+func (s *AlertService) GetAffectedMetas(ruleName string) int {
+	count := 0
+	for _, meta := range s.currentRuleMetas {
+		if meta.AlertName == ruleName {
+			count++
+		}
+	}
+	return count
+}
+
+// ========== 内部核心方法 ==========
+
+// regenerateAndSync 使用当前内存中的规则和元信息重新生成Prometheus规则并同步
+func (s *AlertService) regenerateAndSync() error {
 	// 构建Prometheus规则文件
-	prometheusRules := s.buildPrometheusRules(rules, ruleMetas)
+	prometheusRules := s.buildPrometheusRules(s.currentRules, s.currentRuleMetas)
 
 	// 写入规则文件
 	if err := s.writeRulesFile(prometheusRules); err != nil {
@@ -53,12 +126,14 @@ func (s *AlertService) SyncRulesToPrometheus(rules []model.AlertRule, ruleMetas 
 	}
 
 	log.Info().
-		Int("rules_count", len(rules)).
-		Int("metas_count", len(ruleMetas)).
-		Msg("Rules synced to Prometheus successfully")
+		Int("rules_count", len(s.currentRules)).
+		Int("metas_count", len(s.currentRuleMetas)).
+		Msg("Rules regenerated and synced to Prometheus")
 
 	return nil
 }
+
+// ========== 规则构建相关方法 ==========
 
 // buildPrometheusRules 构建Prometheus规则
 func (s *AlertService) buildPrometheusRules(rules []model.AlertRule, ruleMetas []model.AlertRuleMeta) *model.PrometheusRuleFile {
@@ -114,8 +189,8 @@ func (s *AlertService) buildPrometheusRules(rules []model.AlertRule, ruleMetas [
 
 		// 计算for字段
 		forDuration := ""
-		if meta.WatchTime > 0 {
-			forDuration = fmt.Sprintf("%ds", meta.WatchTime)
+		if rule.WatchTime > 0 {
+			forDuration = fmt.Sprintf("%ds", rule.WatchTime)
 		}
 
 		// 使用规则名作为 alert 名称，通过 labels 区分不同实例
@@ -182,7 +257,7 @@ func (s *AlertService) buildExpression(rule *model.AlertRule, meta *model.AlertR
 		if len(labelMatchers) > 0 {
 			// 如果表达式包含{，说明已经有标签选择器
 			if strings.Contains(expr, "{") {
-				expr = strings.Replace(expr, "}", ","+strings.Join(labelMatchers, ",")+"}", 1)
+				expr = strings.Replace(expr, "}", ","+strings.Join(labelMatchers, ",")+"}}", 1)
 			} else {
 				// 在指标名后添加标签选择器
 				// 查找第一个非字母数字下划线的字符
@@ -209,6 +284,8 @@ func (s *AlertService) buildExpression(rule *model.AlertRule, meta *model.AlertR
 
 	return expr
 }
+
+// ========== 文件操作相关方法 ==========
 
 // writeRulesFile 写入规则文件
 func (s *AlertService) writeRulesFile(rules *model.PrometheusRuleFile) error {
@@ -259,29 +336,6 @@ func (s *AlertService) writeRulesFile(rules *model.PrometheusRuleFile) error {
 	return nil
 }
 
-// reloadPrometheus 重新加载Prometheus配置
-func (s *AlertService) reloadPrometheus() error {
-	prometheusURL := os.Getenv("PROMETHEUS_ADDRESS")
-	if prometheusURL == "" {
-		prometheusURL = "http://10.210.10.33:9090"
-	}
-
-	reloadURL := fmt.Sprintf("%s/-/reload", strings.TrimSuffix(prometheusURL, "/"))
-
-	resp, err := http.Post(reloadURL, "text/plain", nil)
-	if err != nil {
-		return fmt.Errorf("failed to reload Prometheus: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Prometheus reload failed with status: %d", resp.StatusCode)
-	}
-
-	log.Info().Msg("Prometheus configuration reloaded")
-	return nil
-}
-
 // syncRuleFileToContainer 同步规则文件到容器
 func (s *AlertService) syncRuleFileToContainer(filePath string) error {
 	// 获取容器名称，默认为 mock-s3-prometheus
@@ -315,6 +369,31 @@ func (s *AlertService) syncRuleFileToContainer(filePath string) error {
 		log.Warn().Err(err).Msg("Failed to ensure Prometheus rule configuration")
 	}
 
+	return nil
+}
+
+// ========== Prometheus 配置相关方法 ==========
+
+// reloadPrometheus 重新加载Prometheus配置
+func (s *AlertService) reloadPrometheus() error {
+	prometheusURL := os.Getenv("PROMETHEUS_ADDRESS")
+	if prometheusURL == "" {
+		prometheusURL = "http://10.210.10.33:9090"
+	}
+
+	reloadURL := fmt.Sprintf("%s/-/reload", strings.TrimSuffix(prometheusURL, "/"))
+
+	resp, err := http.Post(reloadURL, "text/plain", nil)
+	if err != nil {
+		return fmt.Errorf("failed to reload Prometheus: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Prometheus reload failed with status: %d", resp.StatusCode)
+	}
+
+	log.Info().Msg("Prometheus configuration reloaded")
 	return nil
 }
 
@@ -373,102 +452,4 @@ rule_files:\
 
 	log.Info().Msg("Prometheus restarted with new configuration")
 	return nil
-}
-
-// UpdateRule 更新单个规则模板
-// 只更新传入的规则，其他规则和所有元信息保持不变
-func (s *AlertService) UpdateRule(rule model.AlertRule) error {
-	// 查找并更新规则
-	found := false
-	for i, r := range s.currentRules {
-		if r.Name == rule.Name {
-			s.currentRules[i] = rule
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		// 如果规则不存在，添加新规则
-		s.currentRules = append(s.currentRules, rule)
-	}
-
-	// 统计受影响的元信息数量
-	affectedCount := 0
-	for _, meta := range s.currentRuleMetas {
-		if meta.AlertName == rule.Name {
-			affectedCount++
-		}
-	}
-
-	log.Info().
-		Str("rule", rule.Name).
-		Int("affected_metas", affectedCount).
-		Msg("Updating rule and affected metas")
-
-	// 使用更新后的规则重新生成并同步
-	return s.regenerateAndSync()
-}
-
-// UpdateRuleMeta 更新单个规则元信息
-// 通过 alert_name + labels 唯一确定一个元信息记录
-func (s *AlertService) UpdateRuleMeta(meta model.AlertRuleMeta) error {
-	// 查找并更新元信息
-	found := false
-	for i, m := range s.currentRuleMetas {
-		// 通过 alert_name + labels 唯一确定
-		if m.AlertName == meta.AlertName && m.Labels == meta.Labels {
-			s.currentRuleMetas[i] = meta
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		// 如果元信息不存在，添加新元信息
-		s.currentRuleMetas = append(s.currentRuleMetas, meta)
-	}
-
-	log.Info().
-		Str("alert_name", meta.AlertName).
-		Str("labels", meta.Labels).
-		Msg("Updating rule meta")
-
-	// 使用更新后的元信息重新生成并同步
-	return s.regenerateAndSync()
-}
-
-// regenerateAndSync 使用当前内存中的规则和元信息重新生成Prometheus规则并同步
-func (s *AlertService) regenerateAndSync() error {
-	// 构建Prometheus规则文件
-	prometheusRules := s.buildPrometheusRules(s.currentRules, s.currentRuleMetas)
-
-	// 写入规则文件
-	if err := s.writeRulesFile(prometheusRules); err != nil {
-		return fmt.Errorf("failed to write rules file: %w", err)
-	}
-
-	// 通知Prometheus重新加载配置
-	if err := s.reloadPrometheus(); err != nil {
-		log.Warn().Err(err).Msg("Failed to reload Prometheus, rules file has been updated")
-		// 不返回错误，因为文件已经更新成功
-	}
-
-	log.Info().
-		Int("rules_count", len(s.currentRules)).
-		Int("metas_count", len(s.currentRuleMetas)).
-		Msg("Rules regenerated and synced to Prometheus")
-
-	return nil
-}
-
-// GetAffectedMetas 获取受影响的元信息数量
-func (s *AlertService) GetAffectedMetas(ruleName string) int {
-	count := 0
-	for _, meta := range s.currentRuleMetas {
-		if meta.AlertName == ruleName {
-			count++
-		}
-	}
-	return count
 }
