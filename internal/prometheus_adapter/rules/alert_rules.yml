@@ -1,0 +1,5 @@
+# Prometheus Alert Rules
+# This file is managed by the Prometheus Adapter service
+# It will be loaded on startup and saved on shutdown
+
+groups: []
