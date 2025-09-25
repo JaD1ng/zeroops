@@ -1417,13 +1417,7 @@ func (f *floyDeployService) modifyStartScript(tempDir string, port int) error {
 	if err != nil {
 		return fmt.Errorf("读取启动脚本失败: %v", err)
 	}
-
-	// 检查是否包含环境变量SERVICE_PORT的设置
 	contentStr := string(content)
-	if !strings.Contains(contentStr, "SERVICE_PORT") {
-		// 如果start.sh不包含SERVICE_PORT，说明已经是新版本的脚本，跳过
-		return nil
-	}
 
 	// 检查是否已经是新版本的脚本（从配置文件读取端口）
 	if strings.Contains(contentStr, "从配置文件读取端口") {
