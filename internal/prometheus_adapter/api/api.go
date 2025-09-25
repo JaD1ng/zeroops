@@ -12,17 +12,19 @@ import (
 
 // Api Prometheus Adapter API
 type Api struct {
-	metricService *service.MetricService
-	alertService  *service.AlertService
-	router        *fox.Engine
+	metricService       *service.MetricService
+	alertService        *service.AlertService
+	alertmanagerService *service.AlertmanagerService
+	router              *fox.Engine
 }
 
 // NewApi 创建新的 API
-func NewApi(metricService *service.MetricService, alertService *service.AlertService, router *fox.Engine) (*Api, error) {
+func NewApi(metricService *service.MetricService, alertService *service.AlertService, alertmanagerService *service.AlertmanagerService, router *fox.Engine) (*Api, error) {
 	api := &Api{
-		metricService: metricService,
-		alertService:  alertService,
-		router:        router,
+		metricService:       metricService,
+		alertService:        alertService,
+		alertmanagerService: alertmanagerService,
+		router:              router,
 	}
 
 	api.setupRouters(router)
@@ -35,6 +37,8 @@ func (api *Api) setupRouters(router *fox.Engine) {
 	api.setupMetricRouters(router)
 	// 告警相关路由
 	api.setupAlertRouters(router)
+	// Alertmanager 兼容路由
+	api.setupAlertmanagerRouters(router, api.alertmanagerService)
 }
 
 // ========== 通用辅助方法 ==========

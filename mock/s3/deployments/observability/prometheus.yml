@@ -9,6 +9,14 @@ global:
 rule_files:
   - "/etc/prometheus/rules/*.yml"
 
+# Alerting 配置 - 将告警发送到 Prometheus Adapter (伪 Alertmanager)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - 'host.docker.internal:8081'  # Prometheus Adapter 运行在宿主机的 8081 端口
+      api_version: v2  # 使用 Alertmanager API v2
+
 scrape_configs:
   # Prometheus自身的指标
   - job_name: 'prometheus'

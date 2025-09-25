@@ -411,7 +411,7 @@ func (s *AlertService) buildExpression(rule *model.AlertRule, meta *model.AlertR
 		if len(labelMatchers) > 0 {
 			// 如果表达式包含{，说明已经有标签选择器
 			if strings.Contains(expr, "{") {
-				expr = strings.Replace(expr, "}", ","+strings.Join(labelMatchers, ",")+"}}", 1)
+				expr = strings.Replace(expr, "}", ","+strings.Join(labelMatchers, ",")+"}", 1)
 			} else {
 				// 在指标名后添加标签选择器
 				// 查找第一个非字母数字下划线的字符

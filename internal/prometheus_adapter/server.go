@@ -15,13 +15,13 @@ import (
 
 // PrometheusAdapterServer Prometheus Adapter 服务器
 type PrometheusAdapterServer struct {
-	config              *config.Config
-	promConfig          *promconfig.PrometheusAdapterConfig
-	promClient          *client.PrometheusClient
-	metricService       *service.MetricService
-	alertService        *service.AlertService
-	alertWebhookService *service.AlertWebhookService
-	api                 *api.Api
+	config                   *config.Config
+	promConfig               *promconfig.PrometheusAdapterConfig
+	promClient               *client.PrometheusClient
+	metricService            *service.MetricService
+	alertService             *service.AlertService
+	alertmanagerProxyService *service.AlertmanagerService
+	api                      *api.Api
 }
 
 // NewPrometheusAdapterServer 创建新的 Prometheus Adapter 服务器
@@ -44,22 +44,16 @@ func NewPrometheusAdapterServer(cfg *config.Config) (*PrometheusAdapterServer, e
 	// 创建告警服务
 	alertService := service.NewAlertService(promClient, promConfig)
 
-	// 创建告警 Webhook 服务
-	alertWebhookService := service.NewAlertWebhookService(promClient, promConfig)
+	// 创建 Alertmanager 代理服务
+	alertmanagerProxyService := service.NewAlertmanagerProxyService(promConfig)
 
 	server := &PrometheusAdapterServer{
-		config:              cfg,
-		promConfig:          promConfig,
-		promClient:          promClient,
-		metricService:       metricService,
-		alertService:        alertService,
-		alertWebhookService: alertWebhookService,
-	}
-
-	// 启动告警 Webhook 服务
-	if err := alertWebhookService.Start(); err != nil {
-		log.Error().Err(err).Msg("Failed to start alert webhook service")
-		// 不返回错误，允许服务继续运行
+		config:                   cfg,
+		promConfig:               promConfig,
+		promClient:               promClient,
+		metricService:            metricService,
+		alertService:             alertService,
+		alertmanagerProxyService: alertmanagerProxyService,
 	}
 
 	log.Info().Str("prometheus_address", promConfig.Prometheus.Address).Msg("Prometheus Adapter initialized successfully")
@@ -69,10 +63,12 @@ func NewPrometheusAdapterServer(cfg *config.Config) (*PrometheusAdapterServer, e
 // UseApi 设置 API 路由
 func (s *PrometheusAdapterServer) UseApi(router *fox.Engine) error {
 	var err error
-	s.api, err = api.NewApi(s.metricService, s.alertService, router)
+	s.api, err = api.NewApi(s.metricService, s.alertService, s.alertmanagerProxyService, router)
 	if err != nil {
 		return fmt.Errorf("failed to initialize API: %w", err)
 	}
+
+	log.Info().Msg("All API endpoints registered")
 
 	return nil
 }
@@ -80,11 +76,6 @@ func (s *PrometheusAdapterServer) UseApi(router *fox.Engine) error {
 // Close 优雅关闭服务器
 func (s *PrometheusAdapterServer) Close(ctx context.Context) error {
 	log.Info().Msg("Starting shutdown...")
-
-	// 停止告警 Webhook 服务
-	if s.alertWebhookService != nil {
-		s.alertWebhookService.Stop()
-	}
 
 	// 调用 alertService 的 Shutdown 方法保存规则
 	if s.alertService != nil {

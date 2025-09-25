@@ -17,3 +17,12 @@ type AlertRuleMeta struct {
 	Labels    string  `json:"labels" gorm:"type:jsonb"`                  // 适用标签，如 {"service":"s3","version":"v1"}，为空表示全局
 	Threshold float64 `json:"threshold"`                                 // 阈值（会被渲染成特定规则的 threshold metric 数值）
 }
+
+// AlertmanagerAlert 符合 Alertmanager API v2 的告警格式
+type AlertmanagerAlert struct {
+	Labels       map[string]string `json:"labels"`
+	Annotations  map[string]string `json:"annotations,omitempty"`
+	StartsAt     string            `json:"startsAt,omitempty"` // RFC3339 格式
+	EndsAt       string            `json:"endsAt,omitempty"`   // RFC3339 格式
+	GeneratorURL string            `json:"generatorURL,omitempty"`
+}
