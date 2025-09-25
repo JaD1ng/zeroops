@@ -141,16 +141,13 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 	// 确保在函数结束时清理临时文件
 	defer os.Remove(packageFilePath)
 
-	// 4. 计算fversion（暂时不使用，但保留以备将来实现）
-	fversion := f.calculateFversion(params.Service, "prod", params.Version)
-
-	// 5. 获取服务基础端口（从包文件中读取）
+	// 4. 获取服务基础端口（从包文件中读取）
 	basePort, err := f.getServiceBasePort(packageFilePath, params.Service)
 	if err != nil {
 		return nil, fmt.Errorf("获取服务基础端口失败: %v", err)
 	}
 
-	// 6. 获取可用的主机列表
+	// 5. 获取可用的主机列表
 	availableHosts, err := GetAvailableHostInfos()
 	if err != nil {
 		return nil, err
@@ -205,8 +202,11 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 		}
 		defer os.Remove(modifiedPackagePath) // 清理修改后的包文件
 
-		// 6.7 部署服务到新创建的实例（使用新的MD5值）
-		if err := f.deployToSingleInstance(instanceIP, params.Service, params.Version, fversion, modifiedPackagePath, newMd5sum); err != nil {
+		// 6.7 为当前实例计算包含包内容和配置的fversion
+		instanceFversion := f.calculateFversion(params.Service, "prod", params.Version, modifiedPackagePath)
+
+		// 6.8 部署服务到新创建的实例（使用新的MD5值）
+		if err := f.deployToSingleInstance(instanceIP, params.Service, params.Version, instanceFversion, modifiedPackagePath, newMd5sum); err != nil {
 			// 记录错误但继续处理其他实例
 			fmt.Printf("部署到实例 %s (%s) 失败: %v\n", hostIP, hostIP, err)
 			continue
@@ -262,14 +262,11 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 	// 确保在函数结束时清理临时文件
 	defer os.Remove(packageFilePath)
 
-	// 4. 计算fversion
-	fversion := f.calculateFversion(params.Service, "prod", params.Version)
-
-	// 5. 串行部署到各个实例
+	// 4. 串行部署到各个实例
 	successInstances := []string{}
 	for _, instanceID := range params.Instances {
 
-		// 5.1 获取实例IP和端口
+		// 4.1 获取实例IP和端口
 		instanceIP, err := GetInstanceIP(instanceID)
 		if err != nil {
 			fmt.Printf("获取实例 %s IP失败: %v\n", instanceID, err)
@@ -282,7 +279,7 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 			continue
 		}
 
-		// 5.2 检查实例健康状态
+		// 4.2 检查实例健康状态
 		healthy, err := CheckInstanceHealth(instanceIP, instancePort)
 		if err != nil {
 			// 记录错误但继续处理其他实例
@@ -295,7 +292,7 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 			continue
 		}
 
-		// 5.3 处理包文件（修改配置文件中的端口）
+		// 4.3 处理包文件（修改配置文件中的端口）
 		modifiedPackagePath, newMd5sum, err := f.processPackageWithPort(packageFilePath, params.Service, instancePort)
 		if err != nil {
 			fmt.Printf("处理包文件失败: %v\n", err)
@@ -303,14 +300,17 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 		}
 		defer os.Remove(modifiedPackagePath) // 清理修改后的包文件
 
-		// 5.4 部署到单个实例（使用修改后的包文件）
-		if err := f.deployToSingleInstance(instanceIP, params.Service, params.Version, fversion, modifiedPackagePath, newMd5sum); err != nil {
+		// 4.4 为当前实例计算fversion
+		instanceFversion := f.calculateFversion(params.Service, "prod", params.Version, modifiedPackagePath)
+
+		// 4.5 部署到单个实例（使用修改后的包文件）
+		if err := f.deployToSingleInstance(instanceIP, params.Service, params.Version, instanceFversion, modifiedPackagePath, newMd5sum); err != nil {
 			// 记录错误但继续处理其他实例
 			fmt.Printf("部署到实例 %s (%s) 失败: %v\n", instanceID, instanceIP, err)
 			continue
 		}
 
-		// 5.5 更新实例版本信息到数据库
+		// 4.6 更新实例版本信息到数据库
 		if err := f.updateInstanceVersion(instanceID, params.Service, params.Version); err != nil {
 			fmt.Printf("更新实例 %s 版本信息失败: %v\n", instanceID, err)
 			// 继续处理，不因为数据库错误而中断部署流程
@@ -363,14 +363,11 @@ func (f *floyDeployService) ExecuteRollback(params *model.RollbackParams) (*mode
 	// 确保在函数结束时清理临时文件
 	defer os.Remove(packageFilePath)
 
-	// 4. 计算fversion
-	fversion := f.calculateFversion(params.Service, "prod", params.TargetVersion)
-
-	// 5. 串行回滚到各个实例（单实例容错）
+	// 4. 串行回滚到各个实例（单实例容错）
 	successInstances := []string{}
 	for _, instanceID := range params.Instances {
 
-		// 5.1 获取实例IP和端口
+		// 4.1 获取实例IP和端口
 		instanceIP, err := GetInstanceIP(instanceID)
 		if err != nil {
 			fmt.Printf("获取实例 %s IP失败: %v\n", instanceID, err)
@@ -383,7 +380,7 @@ func (f *floyDeployService) ExecuteRollback(params *model.RollbackParams) (*mode
 			continue
 		}
 
-		// 5.2 检查实例健康状态
+		// 4.2 检查实例健康状态
 		healthy, err := CheckInstanceHealth(instanceIP, instancePort)
 		if err != nil {
 			// 记录错误但继续处理其他实例
@@ -396,7 +393,7 @@ func (f *floyDeployService) ExecuteRollback(params *model.RollbackParams) (*mode
 			continue
 		}
 
-		// 5.3 处理包文件（修改配置文件中的端口）
+		// 4.3 处理包文件（修改配置文件中的端口）
 		modifiedPackagePath, newMd5sum, err := f.processPackageWithPort(packageFilePath, params.Service, instancePort)
 		if err != nil {
 			fmt.Printf("处理包文件失败: %v\n", err)
@@ -404,14 +401,17 @@ func (f *floyDeployService) ExecuteRollback(params *model.RollbackParams) (*mode
 		}
 		defer os.Remove(modifiedPackagePath) // 清理修改后的包文件
 
-		// 5.4 回滚到单个实例（使用修改后的包文件）
-		if err := f.rollbackToSingleInstance(instanceIP, params.Service, params.TargetVersion, fversion, modifiedPackagePath, newMd5sum); err != nil {
+		// 4.4 为当前实例计算fversion
+		instanceFversion := f.calculateFversion(params.Service, "prod", params.TargetVersion, modifiedPackagePath)
+
+		// 4.5 回滚到单个实例（使用修改后的包文件）
+		if err := f.rollbackToSingleInstance(instanceIP, params.Service, params.TargetVersion, instanceFversion, modifiedPackagePath, newMd5sum); err != nil {
 			// 记录错误但继续处理其他实例
 			fmt.Printf("回滚到实例 %s (%s) 失败: %v\n", instanceID, instanceIP, err)
 			continue
 		}
 
-		// 5.5 更新实例版本信息到数据库
+		// 4.6 更新实例版本信息到数据库
 		if err := f.updateInstanceVersion(instanceID, params.Service, params.TargetVersion); err != nil {
 			fmt.Printf("更新实例 %s 版本信息失败: %v\n", instanceID, err)
 			// 继续处理，不因为数据库错误而中断部署流程
@@ -586,16 +586,22 @@ func (f *floyDeployService) copyFromLocal(filePath string) (string, []byte, erro
 	return tmpFilePath, md5sum, nil
 }
 
-// calculateFversion 计算版本号
-func (f *floyDeployService) calculateFversion(service, env, version string) string {
-	// 简化的fversion计算（实际应该包含配置文件信息）
+// calculateFversion 计算版本号，包含包内容和配置文件内容
+func (f *floyDeployService) calculateFversion(service, env, version string, packageFilePath string) string {
 	h := md5.New()
 	io.WriteString(h, fmt.Sprintf("%s:%s:%s", service, env, version))
 
-	// 添加一个简单的配置文件占位
+	// 添加包文件内容（二进制tar文件）
+	packageContent, err := os.ReadFile(packageFilePath)
+	if err == nil {
+		io.WriteString(h, ":")
+		h.Write(packageContent)
+	}
+
+	// 添加配置文件内容
 	io.WriteString(h, ":app.conf")
 	io.WriteString(h, "\n\n")
-	io.WriteString(h, "# Simple config placeholder")
+	io.WriteString(h, "# Configuration placeholder for fversion calculation")
 
 	fversion := base64.URLEncoding.EncodeToString(h.Sum(nil))
 	fversion = strings.TrimRight(fversion, "=")
