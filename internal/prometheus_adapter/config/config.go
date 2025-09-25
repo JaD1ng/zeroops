@@ -42,9 +42,27 @@ type ServerConfig struct {
 
 // LoadConfig 加载配置文件
 func LoadConfig(configPath string) (*PrometheusAdapterConfig, error) {
-	// 如果没有指定配置文件，使用默认路径
+	// 如果没有指定配置文件，尝试多个默认路径
 	if configPath == "" {
-		configPath = "internal/prometheus_adapter/config/prometheus_adapter.yml"
+		// 尝试的路径列表（按优先级）
+		possiblePaths := []string{
+			"config/prometheus_adapter.yml",                             // 部署环境：相对于工作目录
+			"internal/prometheus_adapter/config/prometheus_adapter.yml", // 开发环境：源码目录
+			"./prometheus_adapter.yml",                                  // 当前目录
+		}
+
+		for _, path := range possiblePaths {
+			if _, err := os.Stat(path); err == nil {
+				configPath = path
+				log.Info().Str("path", path).Msg("Found config file")
+				break
+			}
+		}
+
+		// 如果都找不到，使用第一个路径（稍后会返回默认配置）
+		if configPath == "" {
+			configPath = possiblePaths[0]
+		}
 	}
 
 	// 读取配置文件
