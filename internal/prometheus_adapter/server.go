@@ -60,6 +60,14 @@ func NewPrometheusAdapterServer(cfg *config.Config) (*PrometheusAdapterServer, e
 	return server, nil
 }
 
+// GetBindAddr 获取配置文件中的绑定地址
+func (s *PrometheusAdapterServer) GetBindAddr() string {
+	if s.promConfig != nil && s.promConfig.Server.BindAddr != "" {
+		return s.promConfig.Server.BindAddr
+	}
+	return ""
+}
+
 // UseApi 设置 API 路由
 func (s *PrometheusAdapterServer) UseApi(router *fox.Engine) error {
 	var err error
