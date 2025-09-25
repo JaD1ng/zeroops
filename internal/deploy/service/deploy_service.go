@@ -1270,6 +1270,12 @@ func (f *floyDeployService) processPackageWithPort(packagePath, serviceName stri
 		return "", nil, fmt.Errorf("修改配置文件失败: %v", err)
 	}
 
+	// 3.1 修改start.sh脚本中的端口逻辑
+	err = f.modifyStartScript(tempDir, port)
+	if err != nil {
+		return "", nil, fmt.Errorf("修改启动脚本失败: %v", err)
+	}
+
 	// 4. 重新打包到临时目录
 	tempPackagePath := filepath.Join(tempDir, "modified-"+filepath.Base(packagePath))
 	err = f.createTarGz(tempDir, tempPackagePath)
@@ -1393,6 +1399,54 @@ func (f *floyDeployService) modifyConfigPort(tempDir, serviceName string, port i
 		return fmt.Errorf("写入配置文件失败: %v", err)
 	}
 
+	return nil
+}
+
+// modifyStartScript 修改启动脚本中的端口
+func (f *floyDeployService) modifyStartScript(tempDir string, port int) error {
+	startScriptPath := filepath.Join(tempDir, "start.sh")
+
+	// 检查start.sh文件是否存在
+	if _, err := os.Stat(startScriptPath); os.IsNotExist(err) {
+		// 如果start.sh不存在，说明这个包可能没有start.sh脚本，跳过
+		return nil
+	}
+
+	// 读取start.sh文件内容
+	content, err := os.ReadFile(startScriptPath)
+	if err != nil {
+		return fmt.Errorf("读取启动脚本失败: %v", err)
+	}
+
+	// 检查是否包含环境变量SERVICE_PORT的设置
+	contentStr := string(content)
+	if !strings.Contains(contentStr, "SERVICE_PORT") {
+		// 如果start.sh不包含SERVICE_PORT，说明已经是新版本的脚本，跳过
+		return nil
+	}
+
+	// 替换环境变量设置，改为从配置文件读取端口
+	oldPattern := `export SERVICE_PORT="${SERVICE_PORT:-8080}"`
+	newPattern := fmt.Sprintf(`# 从配置文件读取端口
+if [ -f "config.yaml" ]; then
+    SERVICE_PORT=$(grep -E "^\s*port:\s*" config.yaml | sed 's/.*port:\s*\([0-9]*\).*/\1/')
+    if [ -z "$SERVICE_PORT" ]; then
+        SERVICE_PORT="%d"
+    fi
+else
+    SERVICE_PORT="%d"
+fi`, port, port)
+
+	// 执行替换
+	newContent := strings.Replace(contentStr, oldPattern, newPattern, 1)
+
+	// 写回文件
+	err = os.WriteFile(startScriptPath, []byte(newContent), 0755)
+	if err != nil {
+		return fmt.Errorf("写入启动脚本失败: %v", err)
+	}
+
+	fmt.Printf("修改启动脚本端口逻辑，端口: %d\n", port)
 	return nil
 }
 
