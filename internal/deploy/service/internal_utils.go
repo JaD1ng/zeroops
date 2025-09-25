@@ -5,7 +5,6 @@ import (
 	"math/rand"
 	"net"
 	"os/exec"
-	"strconv"
 	"sync"
 	"time"
 
@@ -61,11 +60,6 @@ func GetInstanceIP(instanceID string) (string, error) {
 		return "", fmt.Errorf("instanceID cannot be empty")
 	}
 
-	// 验证instanceID是否为有效的数字（因为数据库中id是SERIAL类型）
-	if _, err := strconv.Atoi(instanceID); err != nil {
-		return "", fmt.Errorf("invalid instanceID format: %s, must be a number", instanceID)
-	}
-
 	// 获取数据库连接
 	_, err := initDatabase()
 	if err != nil {
@@ -86,11 +80,6 @@ func GetInstancePort(instanceID string) (int, error) {
 	// 参数验证
 	if instanceID == "" {
 		return 0, fmt.Errorf("instanceID cannot be empty")
-	}
-
-	// 验证instanceID是否为有效的数字（因为数据库中id是SERIAL类型）
-	if _, err := strconv.Atoi(instanceID); err != nil {
-		return 0, fmt.Errorf("invalid instanceID format: %s, must be a number", instanceID)
 	}
 
 	// 获取数据库连接
