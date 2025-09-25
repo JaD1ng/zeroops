@@ -7,6 +7,7 @@ type AlertRule struct {
 	Expr        string `json:"expr" gorm:"type:text;not null"`            // 左侧业务指标表达式，如 sum(apitime) by (service, version)
 	Op          string `json:"op" gorm:"type:varchar(4);not null"`        // 阈值比较方式（>, <, =, !=）
 	Severity    string `json:"severity" gorm:"type:varchar(32);not null"` // 告警等级，通常进入告警的 labels.severity
+	WatchTime   int    `json:"watch_time"`                                // 持续时长（秒），映射 Prometheus rule 的 for 字段
 }
 
 // AlertRuleMeta 告警规则元信息表 - 存储服务级别的告警配置
@@ -15,5 +16,4 @@ type AlertRuleMeta struct {
 	AlertName string  `json:"alert_name" gorm:"type:varchar(255);index"` // 关联 alert_rules.name
 	Labels    string  `json:"labels" gorm:"type:jsonb"`                  // 适用标签，如 {"service":"s3","version":"v1"}，为空表示全局
 	Threshold float64 `json:"threshold"`                                 // 阈值（会被渲染成特定规则的 threshold metric 数值）
-	WatchTime int     `json:"watch_time"`                                // 持续时长（映射 Prometheus rule 的 for）
 }
