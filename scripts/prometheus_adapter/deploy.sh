@@ -235,6 +235,9 @@ if [ -w "$DEPLOY_DIR" ]; then
     chmod +x "$DEPLOY_DIR/start.sh"
     chmod +x "$DEPLOY_DIR/stop.sh"
     [ -f "$DEPLOY_DIR/scripts/test_alert_update.sh" ] && chmod +x "$DEPLOY_DIR/scripts/test_alert_update.sh"
+    # 确保 config 目录和配置文件可读
+    chmod 755 "$DEPLOY_DIR/config"
+    [ -f "$DEPLOY_DIR/config/prometheus_adapter.yml" ] && chmod 644 "$DEPLOY_DIR/config/prometheus_adapter.yml"
     # 确保 rules 目录可写
     chmod 755 "$DEPLOY_DIR/rules"
     [ -f "$DEPLOY_DIR/rules/alert_rules.yml" ] && chmod 644 "$DEPLOY_DIR/rules/alert_rules.yml"
@@ -243,11 +246,16 @@ else
     sudo chmod +x "$DEPLOY_DIR/start.sh"
     sudo chmod +x "$DEPLOY_DIR/stop.sh"
     [ -f "$DEPLOY_DIR/scripts/test_alert_update.sh" ] && sudo chmod +x "$DEPLOY_DIR/scripts/test_alert_update.sh"
+    # 确保 config 目录和配置文件可读
+    sudo chmod 755 "$DEPLOY_DIR/config"
+    [ -f "$DEPLOY_DIR/config/prometheus_adapter.yml" ] && sudo chmod 644 "$DEPLOY_DIR/config/prometheus_adapter.yml"
     # 确保 rules 目录可写
     sudo chmod 755 "$DEPLOY_DIR/rules"
     [ -f "$DEPLOY_DIR/rules/alert_rules.yml" ] && sudo chmod 644 "$DEPLOY_DIR/rules/alert_rules.yml"
     # 设置 rules 目录的所有者为服务运行用户
     sudo chown -R qboxserver:qboxserver "$DEPLOY_DIR/rules"
+    # 确保配置文件也可以被服务用户读取
+    sudo chown qboxserver:qboxserver "$DEPLOY_DIR/config/prometheus_adapter.yml"
 fi
 
 # 清理临时目录
@@ -285,10 +293,12 @@ After=network.target
 Type=simple
 User=qboxserver
 Group=qboxserver
-WorkingDirectory=$DEPLOY_DIR/bin
-Environment="PROMETHEUS_URL=http://localhost:9090"
-Environment="PORT=8080"
-Environment="LOG_LEVEL=info"
+WorkingDirectory=$DEPLOY_DIR
+# 可选：通过环境变量覆盖配置
+#Environment="PROMETHEUS_ADDRESS=http://localhost:9090"
+#Environment="ALERT_WEBHOOK_URL=http://alert-module:8080/v1/integrations/prometheus/alerts"
+#Environment="ALERT_POLLING_INTERVAL=10s"
+#Environment="SERVER_BIND_ADDR=0.0.0.0:9999"
 ExecStart=$DEPLOY_DIR/bin/prometheus_adapter
 ExecStop=$DEPLOY_DIR/stop.sh
 Restart=on-failure
