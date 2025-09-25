@@ -310,3 +310,42 @@ func (r *InstanceRepo) CreateInstanceVersionHistory(instanceID, serviceName, ser
 
 	return r.CreateVersionHistory(versionHistory)
 }
+
+// GetExistingInstancePorts 查询指定服务在指定主机上已存在的实例端口列表
+func (r *InstanceRepo) GetExistingInstancePorts(serviceName, instanceIP string) ([]int, error) {
+	// 参数验证
+	if serviceName == "" {
+		return nil, fmt.Errorf("serviceName cannot be empty")
+	}
+	if instanceIP == "" {
+		return nil, fmt.Errorf("instanceIP cannot be empty")
+	}
+
+	query := `
+		SELECT port 
+		FROM instances 
+		WHERE service_name = $1 AND ip_address = $2 AND status = 'active'
+		ORDER BY port ASC
+	`
+
+	rows, err := r.db.Query(query, serviceName, instanceIP)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query existing instance ports for service %s on host %s: %w", serviceName, instanceIP, err)
+	}
+	defer rows.Close()
+
+	var ports []int
+	for rows.Next() {
+		var port int
+		if err := rows.Scan(&port); err != nil {
+			return nil, fmt.Errorf("failed to scan port: %w", err)
+		}
+		ports = append(ports, port)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating existing ports: %w", err)
+	}
+
+	return ports, nil
+}

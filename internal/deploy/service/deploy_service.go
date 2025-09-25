@@ -191,7 +191,7 @@ func (f *floyDeployService) DeployNewService(params *model.DeployNewServiceParam
 		instanceIP := hostIP
 
 		// 6.5 获取实例端口
-		instancePort, err := f.getNextAvailablePort(params.Service, basePort)
+		instancePort, err := f.getNextAvailablePort(params.Service, instanceIP, basePort)
 		if err != nil {
 			fmt.Printf("获取实例端口失败: %v\n", err)
 			continue
@@ -632,7 +632,7 @@ func (f *floyDeployService) deployToSingleInstance(instanceIP, service, version,
 	}
 
 	// 5. 运行服务
-	if err := f.runService(instanceIP, service, "start.sh", "", 300); err != nil {
+	if err := f.runService(instanceIP, service, "start.sh", "/home/qboxserver", 300); err != nil {
 		return fmt.Errorf("运行服务失败: %v", err)
 	}
 
@@ -667,7 +667,7 @@ func (f *floyDeployService) rollbackToSingleInstance(instanceIP, service, target
 	}
 
 	// 5. 运行服务
-	if err := f.runService(instanceIP, service, "start.sh", "", 300); err != nil {
+	if err := f.runService(instanceIP, service, "start.sh", "/home/qboxserver", 300); err != nil {
 		return fmt.Errorf("运行服务失败: %v", err)
 	}
 
@@ -1192,17 +1192,27 @@ func (f *floyDeployService) getServiceBasePort(packagePath, serviceName string) 
 	return 0, fmt.Errorf("配置文件格式错误，未找到service字段")
 }
 
-// getExistingInstancePorts 查询已存在的实例端口
-func (f *floyDeployService) getExistingInstancePorts(serviceName string) ([]int, error) {
-	// 这里需要数据库连接，暂时返回空切片
-	// TODO: 实现数据库查询逻辑
-	return []int{}, nil
+// getExistingInstancePorts 查询指定主机上已存在的实例端口
+func (f *floyDeployService) getExistingInstancePorts(serviceName, instanceIP string) ([]int, error) {
+	// 初始化数据库连接
+	_, err := initDatabase()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize database connection: %w", err)
+	}
+
+	// 查询已存在的实例端口
+	ports, err := instanceRepo.GetExistingInstancePorts(serviceName, instanceIP)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query existing instance ports: %w", err)
+	}
+
+	return ports, nil
 }
 
 // getNextAvailablePort 获取下一个可用端口
-func (f *floyDeployService) getNextAvailablePort(serviceName string, basePort int) (int, error) {
+func (f *floyDeployService) getNextAvailablePort(serviceName, instanceIP string, basePort int) (int, error) {
 	// 查询已存在的端口
-	existingPorts, err := f.getExistingInstancePorts(serviceName)
+	existingPorts, err := f.getExistingInstancePorts(serviceName, instanceIP)
 	if err != nil {
 		return 0, fmt.Errorf("查询已存在实例端口失败: %v", err)
 	}
