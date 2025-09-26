@@ -318,9 +318,13 @@ func (f *floyDeployService) DeployNewVersion(params *model.DeployNewVersionParam
 			// 5.6 处理版本历史记录（DeployNewVersion逻辑）
 			// 获取当前活跃版本并标记为deprecated
 			if currentVersion, err := f.getCurrentActiveVersion(instanceID, params.Service); err == nil {
+				// 如果找到当前活跃版本，将其标记为deprecated
 				if err := f.updateVersionStatus(instanceID, params.Service, currentVersion, "deprecated"); err != nil {
 					fmt.Printf("更新实例 %s 当前版本状态失败: %v\n", instanceID, err)
 				}
+			} else {
+				// 如果没有找到当前活跃版本，这是正常的（可能是首次部署）
+				fmt.Printf("实例 %s 没有当前活跃版本，这是正常的（可能是首次部署）\n", instanceID)
 			}
 
 			// 创建新版本的版本历史记录
@@ -1421,10 +1425,28 @@ func (f *floyDeployService) modifyStartScript(tempDir string, port int) error {
 
 	// 检查是否已经是新版本的脚本（从配置文件读取端口）
 	if strings.Contains(contentStr, "从配置文件读取端口") {
-		// 如果已经是新版本脚本，只需要更新端口号
-		oldPattern := `SERVICE_PORT="8080"`
-		newPattern := fmt.Sprintf(`SERVICE_PORT="%d"`, port)
-		newContent := strings.Replace(contentStr, oldPattern, newPattern, -1)
+		// 直接替换整个端口读取逻辑，使用更简单可靠的方法
+		oldPortLogic := `# 从配置文件读取端口
+if [ -f "config.yaml" ]; then
+    SERVICE_PORT=$(grep -E "^\s*port:\s*" config.yaml | sed 's/.*port:\s*\([0-9]*\).*/\1/')
+    if [ -z "$SERVICE_PORT" ]; then
+        SERVICE_PORT="8080"
+    fi
+else
+    SERVICE_PORT="8080"
+fi`
+
+		newPortLogic := fmt.Sprintf(`# 从配置文件读取端口
+if [ -f "config.yaml" ]; then
+    SERVICE_PORT=$(grep -A2 "service:" config.yaml | grep -E "^\s*port:\s*" | sed 's/.*port:\s*\([0-9]*\).*/\1/')
+    if [ -z "$SERVICE_PORT" ]; then
+        SERVICE_PORT="%d"
+    fi
+else
+    SERVICE_PORT="%d"
+fi`, port, port)
+
+		newContent := strings.Replace(contentStr, oldPortLogic, newPortLogic, 1)
 
 		err = os.WriteFile(startScriptPath, []byte(newContent), 0755)
 		if err != nil {
