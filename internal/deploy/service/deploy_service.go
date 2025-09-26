@@ -628,6 +628,10 @@ func (f *floyDeployService) deployToSingleInstance(instanceIP, service, version,
 			return fmt.Errorf("推送包文件失败: %v", err)
 		}
 	}
+	// // 2. 推送包文件
+	// if err := f.pushPackage(instanceIP, service, fversion, version, packageFilePath, md5sum); err != nil {
+	// 	return fmt.Errorf("推送包文件失败: %v", err)
+	// }
 
 	// 3. 推送配置文件
 	if wantConfig {
@@ -663,6 +667,10 @@ func (f *floyDeployService) rollbackToSingleInstance(instanceIP, service, target
 			return fmt.Errorf("推送回滚包文件失败: %v", err)
 		}
 	}
+	// // 2. 推送回滚包文件
+	// if err := f.pushPackage(instanceIP, service, fversion, targetVersion, packageFilePath, md5sum); err != nil {
+	// 	return fmt.Errorf("推送回滚包文件失败: %v", err)
+	// }
 
 	// 3. 推送配置文件
 	if wantConfig {
