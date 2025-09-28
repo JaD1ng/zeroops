@@ -105,7 +105,7 @@ func getDefaultConfig() *PrometheusAdapterConfig {
 			ContainerName: "mock-s3-prometheus",
 		},
 		AlertWebhook: AlertWebhookConfig{
-			URL:             "http://alert-module:8080/v1/integrations/prometheus/alerts",
+			URL:             "http://alert-module:8080/v1/integrations/alertmanager/webhook",
 			PollingInterval: "10s",
 		},
 		AlertRules: AlertRulesConfig{

@@ -176,6 +176,7 @@ func (s *AlertmanagerService) forwardAlertsV2(alerts []model.AlertmanagerAlert) 
 		Alerts:       webhookAlerts,
 		GroupLabels:  groupLabels,
 		CommonLabels: commonLabels,
+		Alert:        "REDACTED",
 		Version:      "1",
 	}
 

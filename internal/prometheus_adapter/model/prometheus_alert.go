@@ -39,6 +39,7 @@ type AlertmanagerWebhookRequest struct {
 	Alerts       []AlertmanagerWebhookAlert `json:"alerts"`
 	GroupLabels  map[string]string          `json:"groupLabels"`  // 分组标签
 	CommonLabels map[string]string          `json:"commonLabels"` // 公共标签
+	Alert        string                     `json:"alert"`        // "REDACTED"
 	Version      string                     `json:"version"`      // "4"
 }
 

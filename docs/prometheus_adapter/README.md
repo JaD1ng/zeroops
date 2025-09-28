@@ -243,7 +243,7 @@ internal/prometheus_adapter/
 │   （自定义服务）  │
 └────────┬────────┘
          │ Push
-         │ POST /v1/integrations/prometheus/alerts
+         │ POST /v1/integrations/alertmanager/webhook
          ▼
 ┌─────────────────┐
 │   监控告警模块    │
@@ -263,7 +263,7 @@ internal/prometheus_adapter/
   - 支持告警恢复状态通知
 
 - **推送目标**：
-  - URL: `http://alert-module:8080/v1/integrations/prometheus/alerts`
+  - URL: `http://alert-module:8080/v1/integrations/alertmanager/webhook`
   - Method: POST
   - Content-Type: application/json
 

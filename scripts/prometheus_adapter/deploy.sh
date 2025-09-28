@@ -296,7 +296,7 @@ Group=qboxserver
 WorkingDirectory=$DEPLOY_DIR
 # 可选：通过环境变量覆盖配置
 #Environment="PROMETHEUS_ADDRESS=http://localhost:9090"
-#Environment="ALERT_WEBHOOK_URL=http://alert-module:8080/v1/integrations/prometheus/alerts"
+#Environment="ALERT_WEBHOOK_URL=http://alert-module:8080/v1/integrations/alertmanager/webhook"
 #Environment="ALERT_POLLING_INTERVAL=10s"
 #Environment="SERVER_BIND_ADDR=0.0.0.0:9999"
 ExecStart=$DEPLOY_DIR/bin/prometheus_adapter

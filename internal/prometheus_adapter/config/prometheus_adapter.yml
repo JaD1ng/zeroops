@@ -10,7 +10,7 @@ prometheus:
 # 告警 Webhook 服务配置
 alert_webhook:
   # 监控告警模块地址
-  url: "http://alert-module:8080/v1/integrations/prometheus/alerts"
+  url: "http://alert-module:8080/v1/integrations/alertmanager/webhook"
   # 轮询间隔
   polling_interval: "10s"
 

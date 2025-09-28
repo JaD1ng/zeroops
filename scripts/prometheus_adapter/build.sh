@@ -134,7 +134,7 @@ fi
 
 # 环境变量（可选，用于覆盖配置文件）
 # export PROMETHEUS_ADDRESS="http://localhost:9090"
-# export ALERT_WEBHOOK_URL="http://alert-module:8080/v1/integrations/prometheus/alerts"
+# export ALERT_WEBHOOK_URL="http://alert-module:8080/v1/integrations/alertmanager/webhook"
 # export ALERT_POLLING_INTERVAL="10s"
 # export SERVER_BIND_ADDR="0.0.0.0:9999"
 
