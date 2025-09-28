@@ -264,6 +264,70 @@ func (s *AlertService) GetAffectedMetas(ruleName string) int {
 	return count
 }
 
+// DeleteRule 删除单个规则模板及其所有关联的元信息
+func (s *AlertService) DeleteRule(ruleName string) error {
+	// 查找并删除规则模板
+	ruleFound := false
+	for i, rule := range s.currentRules {
+		if rule.Name == ruleName {
+			// 从切片中删除规则
+			s.currentRules = append(s.currentRules[:i], s.currentRules[i+1:]...)
+			ruleFound = true
+			break
+		}
+	}
+
+	if !ruleFound {
+		return fmt.Errorf("rule '%s' not found", ruleName)
+	}
+
+	// 删除所有关联的元信息
+	deletedMetaCount := 0
+	newMetas := []model.AlertRuleMeta{}
+	for _, meta := range s.currentRuleMetas {
+		if meta.AlertName != ruleName {
+			newMetas = append(newMetas, meta)
+		} else {
+			deletedMetaCount++
+		}
+	}
+	s.currentRuleMetas = newMetas
+
+	log.Info().
+		Str("rule", ruleName).
+		Int("deleted_metas", deletedMetaCount).
+		Msg("Rule and associated metas deleted")
+
+	// 重新生成并同步
+	return s.regenerateAndSync()
+}
+
+// DeleteRuleMeta 删除单个规则元信息
+func (s *AlertService) DeleteRuleMeta(ruleName, labels string) error {
+	// 查找并删除匹配的元信息
+	found := false
+	for i, meta := range s.currentRuleMetas {
+		if meta.AlertName == ruleName && meta.Labels == labels {
+			// 从切片中删除元信息
+			s.currentRuleMetas = append(s.currentRuleMetas[:i], s.currentRuleMetas[i+1:]...)
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("rule meta not found for rule '%s' with labels '%s'", ruleName, labels)
+	}
+
+	log.Info().
+		Str("rule", ruleName).
+		Str("labels", labels).
+		Msg("Rule meta deleted")
+
+	// 重新生成并同步
+	return s.regenerateAndSync()
+}
+
 // ========== 内部核心方法 ==========
 
 // regenerateAndSync 使用当前内存中的规则和元信息重新生成Prometheus规则并同步

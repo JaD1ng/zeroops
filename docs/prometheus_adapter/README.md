@@ -193,6 +193,60 @@ internal/prometheus_adapter/
 }
 ```
 
+#### 3. 删除规则模板
+- 方法与路径：`DELETE /v1/alert-rules/:rule_name`
+- 功能：删除指定的告警规则模板及其所有关联的元信息
+- 路径参数：
+  - `rule_name`：规则名称（如 `high_cpu_usage`）
+- 响应示例：
+```json
+{
+  "status": "success",
+  "message": "Rule 'high_cpu_usage' and 3 associated metas deleted successfully",
+  "rule_name": "high_cpu_usage",
+  "deleted_metas": 3
+}
+```
+- 错误响应示例（规则不存在）：
+```json
+{
+  "error": {
+    "code": "INVALID_PARAMETER",
+    "message": "rule 'invalid_rule' not found"
+  }
+}
+```
+
+#### 4. 删除规则元信息
+- 方法与路径：`DELETE /v1/alert-rules-meta/:rule_name`
+- 功能：删除指定规则下的特定元信息（通过 labels 唯一标识）
+- 路径参数：
+  - `rule_name`：规则名称（如 `high_cpu_usage`）
+- 请求体示例：
+```json
+{
+  "labels": "{\"service\":\"storage-service\",\"version\":\"1.0.0\"}"
+}
+```
+- 响应示例：
+```json
+{
+  "status": "success",
+  "message": "Rule meta deleted successfully",
+  "rule_name": "high_cpu_usage",
+  "labels": "{\"service\":\"storage-service\",\"version\":\"1.0.0\"}"
+}
+```
+- 错误响应示例（元信息不存在）：
+```json
+{
+  "error": {
+    "code": "INVALID_PARAMETER",
+    "message": "rule meta not found for rule 'high_cpu_usage' with labels '{\"service\":\"invalid-service\"}'"
+  }
+}
+```
+
 #### 规则生成机制
 - **规则模板与元信息关联**：通过 `alert_name` 字段关联
   - `AlertRule.name` = `AlertRuleMeta.alert_name`

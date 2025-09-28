@@ -68,3 +68,8 @@ type AlertRuleMetaUpdate struct {
 	Labels    string  `json:"labels" binding:"required"` // 必填，用于唯一标识
 	Threshold float64 `json:"threshold"`
 }
+
+// DeleteAlertRuleMetaRequest 删除告警规则元信息请求
+type DeleteAlertRuleMetaRequest struct {
+	Labels string `json:"labels" binding:"required"` // 必填，用于唯一标识要删除的元信息
+}
