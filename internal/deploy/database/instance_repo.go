@@ -351,3 +351,42 @@ func (r *InstanceRepo) GetExistingInstancePorts(serviceName, instanceIP string) 
 
 	return ports, nil
 }
+
+// GetHostsRunningServiceVersion 查询已运行指定服务指定版本的主机ID列表
+func (r *InstanceRepo) GetHostsRunningServiceVersion(serviceName, serviceVersion string) ([]string, error) {
+	// 参数验证
+	if serviceName == "" {
+		return nil, fmt.Errorf("serviceName cannot be empty")
+	}
+	if serviceVersion == "" {
+		return nil, fmt.Errorf("serviceVersion cannot be empty")
+	}
+
+	query := `
+		SELECT DISTINCT host_id 
+		FROM instances 
+		WHERE service_name = $1 AND service_version = $2 AND status = 'active'
+		ORDER BY host_id
+	`
+
+	rows, err := r.db.Query(query, serviceName, serviceVersion)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query hosts running service %s version %s: %w", serviceName, serviceVersion, err)
+	}
+	defer rows.Close()
+
+	var hostIDs []string
+	for rows.Next() {
+		var hostID string
+		if err := rows.Scan(&hostID); err != nil {
+			return nil, fmt.Errorf("failed to scan host_id: %w", err)
+		}
+		hostIDs = append(hostIDs, hostID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating host IDs: %w", err)
+	}
+
+	return hostIDs, nil
+}

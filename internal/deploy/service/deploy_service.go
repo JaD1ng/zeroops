@@ -635,7 +635,7 @@ func (f *floyDeployService) deployToSingleInstance(instanceIP, service, version,
 
 	// 3. 推送配置文件
 	if wantConfig {
-		if err := f.pushConfig(instanceIP, service, fversion); err != nil {
+		if err := f.pushConfig(instanceIP, service, fversion, version, packageFilePath); err != nil {
 			return fmt.Errorf("推送配置文件失败: %v", err)
 		}
 	}
@@ -667,14 +667,14 @@ func (f *floyDeployService) rollbackToSingleInstance(instanceIP, service, target
 			return fmt.Errorf("推送回滚包文件失败: %v", err)
 		}
 	}
-	// // 2. 推送回滚包文件
+	// 2. 推送回滚包文件
 	// if err := f.pushPackage(instanceIP, service, fversion, targetVersion, packageFilePath, md5sum); err != nil {
 	// 	return fmt.Errorf("推送回滚包文件失败: %v", err)
 	// }
 
 	// 3. 推送配置文件
 	if wantConfig {
-		if err := f.pushConfig(instanceIP, service, fversion); err != nil {
+		if err := f.pushConfig(instanceIP, service, fversion, targetVersion, packageFilePath); err != nil {
 			return fmt.Errorf("推送配置文件失败: %v", err)
 		}
 	}
@@ -859,13 +859,15 @@ func (f *floyDeployService) pushPackage(instanceIP, service, fversion, version s
 }
 
 // pushConfig 推送配置文件
-func (f *floyDeployService) pushConfig(instanceIP, service, fversion string) error {
+func (f *floyDeployService) pushConfig(instanceIP, service, fversion, version, packageFilePath string) error {
 	baseURL := fmt.Sprintf("http://%s:%s", instanceIP, f.port)
 
-	// 简单的配置文件示例
-	configContent := fmt.Sprintf("# Configuration for %s\nservice.name=%s\nservice.version=%s\n",
-		service, service, fversion)
-	configMD5 := md5.Sum([]byte(configContent))
+	// 从修改后的包文件中提取配置文件内容
+	configContent, err := f.extractConfigFromPackage(packageFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to extract config from package: %v", err)
+	}
+	configMD5 := md5.Sum(configContent)
 
 	// 使用 multipart.Writer 构造请求体
 	var buf bytes.Buffer
@@ -879,7 +881,7 @@ func (f *floyDeployService) pushConfig(instanceIP, service, fversion string) err
 
 	// 创建文件字段，设置 Content-Md5 头
 	header := make(map[string][]string)
-	header["Content-Disposition"] = []string{`form-data; name="file"; filename="app.conf"`}
+	header["Content-Disposition"] = []string{fmt.Sprintf(`form-data; name="file"; filename="%s/config.yaml"`, version)}
 	header["Content-Type"] = []string{"application/octet-stream"}
 	header["Content-Md5"] = []string{base64.URLEncoding.EncodeToString(configMD5[:])}
 	header["File-Mode"] = []string{"644"}
@@ -890,7 +892,7 @@ func (f *floyDeployService) pushConfig(instanceIP, service, fversion string) err
 	}
 
 	// 写入配置文件内容
-	_, err = fileWriter.Write([]byte(configContent))
+	_, err = fileWriter.Write(configContent)
 	if err != nil {
 		return fmt.Errorf("failed to write config data: %v", err)
 	}
@@ -1544,4 +1546,29 @@ func (f *floyDeployService) createTarGz(src, dest string) error {
 
 		return nil
 	})
+}
+
+// extractConfigFromPackage 从包文件中提取配置文件内容
+func (f *floyDeployService) extractConfigFromPackage(packageFilePath string) ([]byte, error) {
+	// 创建临时目录
+	tempDir, err := os.MkdirTemp("", "extract-config-*")
+	if err != nil {
+		return nil, fmt.Errorf("创建临时目录失败: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// 解压包文件到临时目录
+	err = f.extractTarGz(packageFilePath, tempDir)
+	if err != nil {
+		return nil, fmt.Errorf("解压包文件失败: %v", err)
+	}
+
+	// 读取配置文件
+	configPath := filepath.Join(tempDir, "config.yaml")
+	configContent, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取配置文件失败: %v", err)
+	}
+
+	return configContent, nil
 }

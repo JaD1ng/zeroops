@@ -156,15 +156,53 @@ func CheckHostHealth(hostIpAddress string) (bool, error) {
 }
 
 // SelectHostForNewInstance 为新实例选择合适的主机
+// 查询数据库，选择未运行当前服务当前版本的主机
 func SelectHostForNewInstance(availableHosts []*model.HostInfo, service string, version string) (*model.HostInfo, error) {
 	// 参数验证
 	if len(availableHosts) == 0 {
 		return nil, fmt.Errorf("no available hosts")
 	}
+	if service == "" {
+		return nil, fmt.Errorf("service name cannot be empty")
+	}
+	if version == "" {
+		return nil, fmt.Errorf("service version cannot be empty")
+	}
 
-	// 随机选择一个主机
-	randomIndex := rand.Intn(len(availableHosts))
-	selectedHost := availableHosts[randomIndex]
+	// 获取数据库连接
+	_, err := initDatabase()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize database: %w", err)
+	}
+
+	// 查询已运行当前服务当前版本的主机ID列表
+	runningHostIDs, err := instanceRepo.GetHostsRunningServiceVersion(service, version)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query hosts running service %s version %s: %w", service, version, err)
+	}
+
+	// 创建已运行主机ID的映射，便于快速查找
+	runningHostMap := make(map[string]bool)
+	for _, hostID := range runningHostIDs {
+		runningHostMap[hostID] = true
+	}
+
+	// 筛选出未运行当前服务当前版本的主机
+	availableHostsForService := []*model.HostInfo{}
+	for _, host := range availableHosts {
+		if !runningHostMap[host.HostID] {
+			availableHostsForService = append(availableHostsForService, host)
+		}
+	}
+
+	// 如果没有可用的主机，返回错误
+	if len(availableHostsForService) == 0 {
+		return nil, fmt.Errorf("all hosts are already running service %s version %s", service, version)
+	}
+
+	// 从可用主机中随机选择一个
+	randomIndex := rand.Intn(len(availableHostsForService))
+	selectedHost := availableHostsForService[randomIndex]
 
 	return selectedHost, nil
 }
