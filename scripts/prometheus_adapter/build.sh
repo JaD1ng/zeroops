@@ -118,11 +118,24 @@ cat > "$BUILD_DIR/start.sh" << 'EOF'
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 BIN_PATH="$SCRIPT_DIR/bin/prometheus_adapter"
 CONFIG_FILE="$SCRIPT_DIR/config/prometheus_adapter.yml"
+PID_FILE="$SCRIPT_DIR/prometheus_adapter.pid"
+LOG_FILE="$SCRIPT_DIR/prometheus_adapter.log"
 
 # 检查二进制文件
 if [ ! -f "$BIN_PATH" ]; then
     echo "错误: 找不到可执行文件 $BIN_PATH"
     exit 1
+fi
+
+# 检查是否已在运行
+if [ -f "$PID_FILE" ]; then
+    PID=$(cat "$PID_FILE")
+    if kill -0 "$PID" 2>/dev/null; then
+        echo "Prometheus Adapter已在运行 (PID: $PID)"
+        exit 1
+    else
+        rm -f "$PID_FILE"
+    fi
 fi
 
 # 检查配置文件
@@ -140,11 +153,23 @@ fi
 
 echo "启动 Prometheus Adapter..."
 
-# 切换到 bin 目录，以便程序能正确找到相对路径的配置文件
+# 切换到脚本目录
 cd "$SCRIPT_DIR"
 
-# 启动服务
-exec "$BIN_PATH"
+# 后台启动服务
+nohup "$BIN_PATH" > "$LOG_FILE" 2>&1 &
+PID=$!
+
+# 保存PID
+echo $PID > "$PID_FILE"
+
+echo "Prometheus Adapter已启动"
+echo "PID: $PID"
+echo "日志文件: $LOG_FILE"
+echo "PID文件: $PID_FILE"
+echo ""
+echo "查看日志: tail -f $LOG_FILE"
+echo "停止服务: ./stop.sh"
 EOF
 chmod +x "$BUILD_DIR/start.sh"
 
@@ -155,10 +180,29 @@ cat > "$BUILD_DIR/stop.sh" << 'EOF'
 
 # Prometheus Adapter 停止脚本
 
+# 获取脚本所在目录
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+PID_FILE="$SCRIPT_DIR/prometheus_adapter.pid"
 APP_NAME="prometheus_adapter"
 
-# 查找进程
-PID=$(ps aux | grep -v grep | grep "$APP_NAME" | awk '{print $2}')
+# 优先从PID文件读取
+if [ -f "$PID_FILE" ]; then
+    PID=$(cat "$PID_FILE" 2>/dev/null)
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+        echo "从PID文件获取进程ID: $PID"
+    else
+        echo "PID文件中的进程已不存在，清理PID文件"
+        rm -f "$PID_FILE"
+        PID=""
+    fi
+else
+    PID=""
+fi
+
+# 如果PID文件不存在或进程已死，通过进程名查找
+if [ -z "$PID" ]; then
+    PID=$(ps aux | grep -v grep | grep "$APP_NAME" | awk '{print $2}')
+fi
 
 if [ -z "$PID" ]; then
     echo "没有找到运行中的 $APP_NAME 进程"
@@ -166,15 +210,24 @@ if [ -z "$PID" ]; then
 fi
 
 echo "停止 $APP_NAME (PID: $PID)..."
-kill -TERM $PID
+kill -TERM $PID 2>/dev/null || true
 
 # 等待进程退出
-sleep 2
+count=0
+while [ $count -lt 10 ] && ps -p "$PID" > /dev/null 2>&1; do
+    sleep 1
+    count=$((count + 1))
+done
 
-# 检查是否还在运行
-if ps -p $PID > /dev/null 2>&1; then
-    echo "强制停止进程..."
-    kill -KILL $PID
+# 检查是否已退出
+if ps -p "$PID" > /dev/null 2>&1; then
+    echo "强制停止 $APP_NAME..."
+    kill -KILL "$PID" 2>/dev/null || true
+fi
+
+# 清理PID文件
+if [ -f "$PID_FILE" ]; then
+    rm -f "$PID_FILE"
 fi
 
 echo "$APP_NAME 已停止"

@@ -132,6 +132,16 @@ fi
 
 # 检查是否有运行中的服务
 check_running_service() {
+    # 优先从PID文件读取
+    if [ -f "$DEPLOY_DIR/prometheus_adapter.pid" ]; then
+        local pid=$(cat "$DEPLOY_DIR/prometheus_adapter.pid" 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "$pid"
+            return
+        fi
+    fi
+
+    # 如果PID文件不存在或进程已死，通过进程名查找
     local pid=$(ps aux | grep -v grep | grep "prometheus_adapter" | grep -v "$0" | awk '{print $2}')
     if [ -n "$pid" ]; then
         echo "$pid"
@@ -156,6 +166,11 @@ stop_service() {
         if ps -p "$pid" > /dev/null 2>&1; then
             log_warn "强制停止进程..."
             kill -KILL "$pid" 2>/dev/null || true
+        fi
+
+        # 清理PID文件
+        if [ -f "$DEPLOY_DIR/prometheus_adapter.pid" ]; then
+            rm -f "$DEPLOY_DIR/prometheus_adapter.pid"
         fi
 
         log_info "服务已停止"
@@ -340,17 +355,27 @@ if [ "$START_SERVICE" = true ] || [ "$RESTART_SERVICE" = true ]; then
 
     # 启动服务
     cd "$DEPLOY_DIR"
-    nohup ./start.sh > prometheus_adapter.log 2>&1 &
+
+    # 直接启动二进制文件而不是通过start.sh脚本
+    nohup ./bin/prometheus_adapter > prometheus_adapter.log 2>&1 &
+    PID=$!
+
+    # 保存PID到文件
+    echo $PID > prometheus_adapter.pid
+
+    log_info "服务已启动 (PID: $PID)"
+    echo "PID文件: $DEPLOY_DIR/prometheus_adapter.pid"
+    echo "日志文件: $DEPLOY_DIR/prometheus_adapter.log"
 
     # 等待服务启动
     sleep 2
 
     # 检查是否启动成功
-    NEW_PID=$(check_running_service)
-    if [ -n "$NEW_PID" ]; then
-        log_info "服务已启动 (PID: $NEW_PID)"
+    if kill -0 "$PID" 2>/dev/null; then
+        log_info "服务启动成功，正在运行"
         echo ""
         echo "查看日志: tail -f $DEPLOY_DIR/prometheus_adapter.log"
+        echo "停止服务: kill \$(cat $DEPLOY_DIR/prometheus_adapter.pid)"
     else
         log_error "服务启动失败，请检查日志"
         exit 1
@@ -359,10 +384,11 @@ else
     echo ""
     echo "手动启动服务:"
     echo "  cd $DEPLOY_DIR"
-    echo "  ./start.sh"
+    echo "  nohup ./bin/prometheus_adapter > prometheus_adapter.log 2>&1 &"
+    echo "  echo \$! > prometheus_adapter.pid"
     echo ""
-    echo "或使用后台模式:"
-    echo "  nohup ./start.sh > prometheus_adapter.log 2>&1 &"
+    echo "停止服务:"
+    echo "  kill \$(cat prometheus_adapter.pid)"
 fi
 
 log_info "部署完成!"

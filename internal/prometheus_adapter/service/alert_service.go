@@ -402,7 +402,7 @@ func (s *AlertService) buildPrometheusRules(rules []model.AlertRule, ruleMetas [
 		// 构建注释
 		annotations := map[string]string{
 			"description": rule.Description,
-			"summary":     fmt.Sprintf("%s %s %f", rule.Expr, rule.Op, meta.Threshold),
+			"summary":     fmt.Sprintf("%s %s %g", rule.Expr, rule.Op, meta.Threshold),
 		}
 
 		// 计算for字段
@@ -475,29 +475,54 @@ func (s *AlertService) buildExpression(rule *model.AlertRule, meta *model.AlertR
 		if len(labelMatchers) > 0 {
 			// 如果表达式包含{，说明已经有标签选择器
 			if strings.Contains(expr, "{") {
-				expr = strings.Replace(expr, "}", ","+strings.Join(labelMatchers, ",")+"}", 1)
-			} else {
-				// 在指标名后添加标签选择器
-				// 查找第一个非字母数字下划线的字符
-				metricEnd := 0
-				for i, ch := range expr {
-					if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
-						(ch >= '0' && ch <= '9') || ch == '_') {
-						metricEnd = i
-						break
+				// 查找第一个 { 后的内容
+				start := strings.Index(expr, "{")
+				end := strings.Index(expr[start:], "}")
+				if end != -1 {
+					end += start
+					existingLabels := strings.TrimSpace(expr[start+1 : end])
+					if existingLabels == "" {
+						// 空的标签选择器，直接替换
+						expr = expr[:start+1] + strings.Join(labelMatchers, ",") + expr[end:]
+					} else {
+						// 已有标签，需要检查是否重复
+						existingLabelMap := make(map[string]bool)
+						// 解析现有标签
+						labelPairs := strings.Split(existingLabels, ",")
+						for _, pair := range labelPairs {
+							if strings.Contains(pair, "=") {
+								key := strings.TrimSpace(strings.Split(pair, "=")[0])
+								if key != "" {
+									existingLabelMap[key] = true
+								}
+							}
+						}
+						// 只添加不重复的标签
+						newLabels := []string{}
+						for k, v := range labels {
+							if !existingLabelMap[k] && k != "" && v != "" {
+								newLabels = append(newLabels, fmt.Sprintf(`%s="%s"`, k, v))
+							}
+						}
+						if len(newLabels) > 0 {
+							expr = expr[:end] + "," + strings.Join(newLabels, ",") + expr[end:]
+						}
 					}
 				}
-				if metricEnd == 0 {
-					metricEnd = len(expr)
+			} else {
+				// 对于没有标签的简单指标，只处理单个单词的情况
+				// 如果表达式包含空格、括号等，不进行标签注入
+				if !strings.ContainsAny(expr, " ()[]{}") {
+					// 只有单个指标名，可以安全添加标签
+					expr = expr + "{" + strings.Join(labelMatchers, ",") + "}"
 				}
-				expr = expr[:metricEnd] + "{" + strings.Join(labelMatchers, ",") + "}" + expr[metricEnd:]
 			}
 		}
 	}
 
 	// 添加比较操作符和阈值
 	if meta.Threshold != 0 {
-		expr = fmt.Sprintf("%s %s %f", expr, rule.Op, meta.Threshold)
+		expr = fmt.Sprintf("%s %s %g", expr, rule.Op, meta.Threshold)
 	}
 
 	return expr
