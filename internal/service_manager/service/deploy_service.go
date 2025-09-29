@@ -42,7 +42,7 @@ func (s *Service) CreateDeployment(ctx context.Context, req *model.CreateDeploym
 		Msg("deployment created successfully")
 
 	// 异步执行实际部署
-	go s.executeActualDeployment(ctx, req)
+	go s.executeActualDeployment(context.Background(), req)
 
 	// 返回创建的部署信息
 	deployment := &model.Deployment{
@@ -291,7 +291,7 @@ func (s *Service) RollbackDeployment(ctx context.Context, service, version strin
 	}
 
 	// 异步执行实际回滚
-	go s.executeActualRollback(ctx, deployment, req)
+	go s.executeActualRollback(context.Background(), deployment, req)
 
 	// 更新数据库状态
 	err = s.db.RollbackDeployment(ctx, service, version)
@@ -309,7 +309,7 @@ func (s *Service) RollbackDeployment(ctx context.Context, service, version strin
 }
 
 // executeActualRollback 执行实际回滚操作
-func (s *Service) executeActualRollback(_ context.Context, deployment *model.Deployment, req *model.RollbackDeploymentRequest) {
+func (s *Service) executeActualRollback(ctx context.Context, deployment *model.Deployment, req *model.RollbackDeploymentRequest) {
 	// 捕获panic，防止goroutine崩溃
 	defer func() {
 		if r := recover(); r != nil {

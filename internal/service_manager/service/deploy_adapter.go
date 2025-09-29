@@ -3,6 +3,8 @@ package service
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 
 	deployModel "github.com/qiniu/zeroops/internal/deploy/model"
 	deployService "github.com/qiniu/zeroops/internal/deploy/service"
@@ -19,7 +21,7 @@ type DeployAdapter struct {
 func NewDeployAdapter(instanceManager InstanceManager) *DeployAdapter {
 	return &DeployAdapter{
 		instanceManager: instanceManager,
-		baseURL:         "http://artifacts.zeroops.com", // 默认包仓库URL，可以从配置读取
+		baseURL:         "/Users/dingnanjia/workspace/mock/zeroops/internal/deploy/packages", // 本地包仓库路径
 	}
 }
 
@@ -115,10 +117,10 @@ func (a *DeployAdapter) buildPackageURL(serviceName, version, customURL string) 
 		return customURL
 	}
 
-	// 否则基于约定构建URL
-	// 格式：{baseURL}/packages/{service}/{version}/{service}-{version}.tar.gz
-	return fmt.Sprintf("%s/packages/%s/%s/%s-%s.tar.gz",
-		a.baseURL, serviceName, version, serviceName, version)
+	// 否则基于约定构建本地文件路径
+	// 格式：{baseURL}/{service}-{version}.tar.gz
+	return fmt.Sprintf("%s/%s-%s.tar.gz",
+		a.baseURL, serviceName, version)
 }
 
 // ValidatePackageURL 验证包URL是否有效
@@ -128,15 +130,26 @@ func (a *DeployAdapter) ValidatePackageURL(packageURL string) error {
 		return err
 	}
 
-	// 额外的简单HTTP检查
-	resp, err := http.Head(packageURL)
-	if err != nil {
-		return fmt.Errorf("package URL not accessible: %w", err)
-	}
-	defer resp.Body.Close()
+	// 区分HTTP URL和本地文件路径
+	if strings.HasPrefix(packageURL, "http://") || strings.HasPrefix(packageURL, "https://") {
+		// HTTP URL检查
+		resp, err := http.Head(packageURL)
+		if err != nil {
+			return fmt.Errorf("package URL not accessible: %w", err)
+		}
+		defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("package not found: HTTP %d", resp.StatusCode)
+		if resp.StatusCode != 200 {
+			return fmt.Errorf("package not found: HTTP %d", resp.StatusCode)
+		}
+	} else {
+		// 本地文件路径检查
+		if _, err := os.Stat(packageURL); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("package file not found: %s", packageURL)
+			}
+			return fmt.Errorf("package file not accessible: %w", err)
+		}
 	}
 
 	return nil
