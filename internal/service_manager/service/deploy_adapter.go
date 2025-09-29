@@ -1,0 +1,154 @@
+package service
+
+import (
+	"fmt"
+	"net/http"
+
+	deployModel "github.com/qiniu/zeroops/internal/deploy/model"
+	deployService "github.com/qiniu/zeroops/internal/deploy/service"
+	"github.com/qiniu/zeroops/internal/service_manager/model"
+)
+
+// DeployAdapter 部署适配器，处理 service_manager 和 deploy 模块间的参数转换
+type DeployAdapter struct {
+	instanceManager InstanceManager
+	baseURL         string // 包仓库基础URL
+}
+
+// NewDeployAdapter 创建部署适配器
+func NewDeployAdapter(instanceManager InstanceManager) *DeployAdapter {
+	return &DeployAdapter{
+		instanceManager: instanceManager,
+		baseURL:         "http://artifacts.zeroops.com", // 默认包仓库URL，可以从配置读取
+	}
+}
+
+// BuildDeployNewServiceParams 构建新服务部署参数
+func (a *DeployAdapter) BuildDeployNewServiceParams(req *model.CreateDeploymentRequest) (*deployModel.DeployNewServiceParams, error) {
+	// 确定实例数量
+	instanceCount := a.determineInstanceCount(req)
+
+	// 构建包URL
+	packageURL := a.buildPackageURL(req.Service, req.Version, req.PackageURL)
+
+	return &deployModel.DeployNewServiceParams{
+		Service:    req.Service,
+		Version:    req.Version,
+		TotalNum:   instanceCount,
+		PackageURL: packageURL,
+	}, nil
+}
+
+// BuildDeployNewVersionParams 构建版本升级参数
+func (a *DeployAdapter) BuildDeployNewVersionParams(req *model.CreateDeploymentRequest) (*deployModel.DeployNewVersionParams, error) {
+	// 获取服务的现有实例
+	instances, err := a.instanceManager.GetServiceInstances(req.Service)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get service instances: %w", err)
+	}
+
+	if len(instances) == 0 {
+		return nil, fmt.Errorf("no existing instances found for service %s", req.Service)
+	}
+
+	// 提取实例ID列表
+	instanceIDs := make([]string, len(instances))
+	for i, inst := range instances {
+		instanceIDs[i] = inst.InstanceID
+	}
+
+	// 构建包URL
+	packageURL := a.buildPackageURL(req.Service, req.Version, req.PackageURL)
+
+	return &deployModel.DeployNewVersionParams{
+		Service:    req.Service,
+		Version:    req.Version,
+		Instances:  instanceIDs,
+		PackageURL: packageURL,
+	}, nil
+}
+
+// BuildRollbackParams 构建回滚参数
+func (a *DeployAdapter) BuildRollbackParams(deployment *model.Deployment, req *model.RollbackDeploymentRequest) (*deployModel.RollbackParams, error) {
+	// 获取当前部署涉及的实例
+	instances, err := a.instanceManager.GetServiceInstances(deployment.Service, deployment.Version)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get service instances for rollback: %w", err)
+	}
+
+	if len(instances) == 0 {
+		return nil, fmt.Errorf("no instances found for service %s version %s", deployment.Service, deployment.Version)
+	}
+
+	// 提取实例ID列表
+	instanceIDs := make([]string, len(instances))
+	for i, inst := range instances {
+		instanceIDs[i] = inst.InstanceID
+	}
+
+	// 构建回滚包URL
+	packageURL := a.buildPackageURL(deployment.Service, req.TargetVersion, req.PackageURL)
+
+	return &deployModel.RollbackParams{
+		Service:       deployment.Service,
+		TargetVersion: req.TargetVersion,
+		Instances:     instanceIDs,
+		PackageURL:    packageURL,
+	}, nil
+}
+
+// determineInstanceCount 确定实例数量
+func (a *DeployAdapter) determineInstanceCount(req *model.CreateDeploymentRequest) int {
+	// 如果请求中指定了实例数量，使用指定值
+	if req.InstanceCount > 0 {
+		return req.InstanceCount
+	}
+
+	// 否则使用默认值
+	return 1
+}
+
+// buildPackageURL 构建包下载URL
+func (a *DeployAdapter) buildPackageURL(serviceName, version, customURL string) string {
+	// 如果提供了自定义URL，直接使用
+	if customURL != "" {
+		return customURL
+	}
+
+	// 否则基于约定构建URL
+	// 格式：{baseURL}/packages/{service}/{version}/{service}-{version}.tar.gz
+	return fmt.Sprintf("%s/packages/%s/%s/%s-%s.tar.gz",
+		a.baseURL, serviceName, version, serviceName, version)
+}
+
+// ValidatePackageURL 验证包URL是否有效
+func (a *DeployAdapter) ValidatePackageURL(packageURL string) error {
+	// 调用 deploy 模块的验证函数
+	if err := deployService.ValidatePackageURL(packageURL); err != nil {
+		return err
+	}
+
+	// 额外的简单HTTP检查
+	resp, err := http.Head(packageURL)
+	if err != nil {
+		return fmt.Errorf("package URL not accessible: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("package not found: HTTP %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+// IsNewServiceDeployment 判断是否为新服务部署
+func (a *DeployAdapter) IsNewServiceDeployment(serviceName string) (bool, error) {
+	instances, err := a.instanceManager.GetServiceInstances(serviceName)
+	if err != nil {
+		return false, fmt.Errorf("failed to check existing instances: %w", err)
+	}
+
+	// 如果没有现有实例，则为新服务部署
+	return len(instances) == 0, nil
+}

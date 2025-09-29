@@ -23,7 +23,7 @@ func (api *Api) setupInfoRouters(router *fox.Engine) {
 	router.DELETE("/v1/services/:service", api.DeleteService)
 }
 
-// ===== 服务信息相关API =====
+// ===== 服务信息查询API =====
 
 // GetServices 获取所有服务列表（GET /v1/services）
 func (api *Api) GetServices(c *fox.Context) {
@@ -146,7 +146,7 @@ func (api *Api) GetServiceMetricTimeSeries(c *fox.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// ===== 服务管理API（CRUD操作） =====
+// ===== 服务管理CRUD API =====
 
 // CreateService 创建服务（POST /v1/services）
 func (api *Api) CreateService(c *fox.Context) {

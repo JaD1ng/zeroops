@@ -15,17 +15,17 @@ func (api *Api) setupDeployRouters(router *fox.Engine) {
 	// 部署任务基本操作
 	router.POST("/v1/deployments", api.CreateDeployment)
 	router.GET("/v1/deployments", api.GetDeployments)
-	router.GET("/v1/deployments/:deployID", api.GetDeploymentByID)
-	router.POST("/v1/deployments/:deployID", api.UpdateDeployment)
-	router.DELETE("/v1/deployments/:deployID", api.DeleteDeployment)
+	router.GET("/v1/deployments/:service/:version", api.GetDeploymentByServiceAndVersion)
+	router.POST("/v1/deployments/:service/:version", api.UpdateDeployment)
+	router.DELETE("/v1/deployments/:service/:version", api.DeleteDeployment)
 
 	// 部署任务控制操作
-	router.POST("/v1/deployments/:deployID/pause", api.PauseDeployment)
-	router.POST("/v1/deployments/:deployID/continue", api.ContinueDeployment)
-	router.POST("/v1/deployments/:deployID/rollback", api.RollbackDeployment)
+	router.POST("/v1/deployments/:service/:version/pause", api.PauseDeployment)
+	router.POST("/v1/deployments/:service/:version/continue", api.ContinueDeployment)
+	router.POST("/v1/deployments/:service/:version/rollback", api.RollbackDeployment)
 }
 
-// ===== 部署管理相关API =====
+// ===== 部署任务基本操作 =====
 
 // CreateDeployment 创建发布任务（POST /v1/deployments）
 func (api *Api) CreateDeployment(c *fox.Context) {
@@ -48,7 +48,7 @@ func (api *Api) CreateDeployment(c *fox.Context) {
 		return
 	}
 
-	deployID, err := api.service.CreateDeployment(ctx, &req)
+	deployment, err := api.service.CreateDeployment(ctx, &req)
 	if err != nil {
 		if err == service.ErrServiceNotFound {
 			c.JSON(http.StatusBadRequest, map[string]any{
@@ -75,26 +75,24 @@ func (api *Api) CreateDeployment(c *fox.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, map[string]any{
-		"id":      deployID,
-		"message": "deployment created successfully",
-	})
+	c.JSON(http.StatusCreated, deployment)
 }
 
-// GetDeploymentByID 获取发布任务详情（GET /v1/deployments/:deployID）
-func (api *Api) GetDeploymentByID(c *fox.Context) {
+// GetDeploymentByServiceAndVersion 获取发布任务详情（GET /v1/deployments/:service/:version）
+func (api *Api) GetDeploymentByServiceAndVersion(c *fox.Context) {
 	ctx := c.Request.Context()
-	deployID := c.Param("deployID")
+	serviceName := c.Param("service")
+	versionName := c.Param("version")
 
-	if deployID == "" {
+	if serviceName == "" || versionName == "" {
 		c.JSON(http.StatusBadRequest, map[string]any{
 			"error":   "bad request",
-			"message": "deployment ID is required",
+			"message": "service and version are required",
 		})
 		return
 	}
 
-	deployment, err := api.service.GetDeploymentByID(ctx, deployID)
+	deployment, err := api.service.GetDeploymentByServiceAndVersion(ctx, serviceName, versionName)
 	if err != nil {
 		if err == service.ErrDeploymentNotFound {
 			c.JSON(http.StatusNotFound, map[string]any{
@@ -103,7 +101,7 @@ func (api *Api) GetDeploymentByID(c *fox.Context) {
 			})
 			return
 		}
-		log.Error().Err(err).Str("deployID", deployID).Msg("failed to get deployment")
+		log.Error().Err(err).Str("service", serviceName).Str("version", versionName).Msg("failed to get deployment")
 		c.JSON(http.StatusInternalServerError, map[string]any{
 			"error":   "internal server error",
 			"message": "failed to get deployment",
@@ -145,15 +143,16 @@ func (api *Api) GetDeployments(c *fox.Context) {
 	})
 }
 
-// UpdateDeployment 修改发布任务（POST /v1/deployments/:deployID）
+// UpdateDeployment 修改发布任务（POST /v1/deployments/:service/:version）
 func (api *Api) UpdateDeployment(c *fox.Context) {
 	ctx := c.Request.Context()
-	deployID := c.Param("deployID")
+	serviceName := c.Param("service")
+	versionName := c.Param("version")
 
-	if deployID == "" {
+	if serviceName == "" || versionName == "" {
 		c.JSON(http.StatusBadRequest, map[string]any{
 			"error":   "bad request",
-			"message": "deployment ID is required",
+			"message": "service and version are required",
 		})
 		return
 	}
@@ -167,7 +166,7 @@ func (api *Api) UpdateDeployment(c *fox.Context) {
 		return
 	}
 
-	err := api.service.UpdateDeployment(ctx, deployID, &req)
+	err := api.service.UpdateDeployment(ctx, serviceName, versionName, &req)
 	if err != nil {
 		if err == service.ErrDeploymentNotFound {
 			c.JSON(http.StatusNotFound, map[string]any{
@@ -183,7 +182,7 @@ func (api *Api) UpdateDeployment(c *fox.Context) {
 			})
 			return
 		}
-		log.Error().Err(err).Str("deployID", deployID).Msg("failed to update deployment")
+		log.Error().Err(err).Str("service", serviceName).Str("version", versionName).Msg("failed to update deployment")
 		c.JSON(http.StatusInternalServerError, map[string]any{
 			"error":   "internal server error",
 			"message": "failed to update deployment",
@@ -196,20 +195,21 @@ func (api *Api) UpdateDeployment(c *fox.Context) {
 	})
 }
 
-// DeleteDeployment 删除发布任务（DELETE /v1/deployments/:deployID）
+// DeleteDeployment 删除发布任务（DELETE /v1/deployments/:service/:version）
 func (api *Api) DeleteDeployment(c *fox.Context) {
 	ctx := c.Request.Context()
-	deployID := c.Param("deployID")
+	serviceName := c.Param("service")
+	versionName := c.Param("version")
 
-	if deployID == "" {
+	if serviceName == "" || versionName == "" {
 		c.JSON(http.StatusBadRequest, map[string]any{
 			"error":   "bad request",
-			"message": "deployment ID is required",
+			"message": "service and version are required",
 		})
 		return
 	}
 
-	err := api.service.DeleteDeployment(ctx, deployID)
+	err := api.service.DeleteDeployment(ctx, serviceName, versionName)
 	if err != nil {
 		if err == service.ErrDeploymentNotFound {
 			c.JSON(http.StatusNotFound, map[string]any{
@@ -225,7 +225,7 @@ func (api *Api) DeleteDeployment(c *fox.Context) {
 			})
 			return
 		}
-		log.Error().Err(err).Str("deployID", deployID).Msg("failed to delete deployment")
+		log.Error().Err(err).Str("service", serviceName).Str("version", versionName).Msg("failed to delete deployment")
 		c.JSON(http.StatusInternalServerError, map[string]any{
 			"error":   "internal server error",
 			"message": "failed to delete deployment",
@@ -238,20 +238,23 @@ func (api *Api) DeleteDeployment(c *fox.Context) {
 	})
 }
 
-// PauseDeployment 暂停发布任务（POST /v1/deployments/:deployID/pause）
+// ===== 部署任务控制操作 =====
+
+// PauseDeployment 暂停发布任务（POST /v1/deployments/:service/:version/pause）
 func (api *Api) PauseDeployment(c *fox.Context) {
 	ctx := c.Request.Context()
-	deployID := c.Param("deployID")
+	serviceName := c.Param("service")
+	versionName := c.Param("version")
 
-	if deployID == "" {
+	if serviceName == "" || versionName == "" {
 		c.JSON(http.StatusBadRequest, map[string]any{
 			"error":   "bad request",
-			"message": "deployment ID is required",
+			"message": "service and version are required",
 		})
 		return
 	}
 
-	err := api.service.PauseDeployment(ctx, deployID)
+	err := api.service.PauseDeployment(ctx, serviceName, versionName)
 	if err != nil {
 		if err == service.ErrDeploymentNotFound {
 			c.JSON(http.StatusNotFound, map[string]any{
@@ -267,7 +270,7 @@ func (api *Api) PauseDeployment(c *fox.Context) {
 			})
 			return
 		}
-		log.Error().Err(err).Str("deployID", deployID).Msg("failed to pause deployment")
+		log.Error().Err(err).Str("service", serviceName).Str("version", versionName).Msg("failed to pause deployment")
 		c.JSON(http.StatusInternalServerError, map[string]any{
 			"error":   "internal server error",
 			"message": "failed to pause deployment",
@@ -280,20 +283,21 @@ func (api *Api) PauseDeployment(c *fox.Context) {
 	})
 }
 
-// ContinueDeployment 继续发布任务（POST /v1/deployments/:deployID/continue）
+// ContinueDeployment 继续发布任务（POST /v1/deployments/:service/:version/continue）
 func (api *Api) ContinueDeployment(c *fox.Context) {
 	ctx := c.Request.Context()
-	deployID := c.Param("deployID")
+	serviceName := c.Param("service")
+	versionName := c.Param("version")
 
-	if deployID == "" {
+	if serviceName == "" || versionName == "" {
 		c.JSON(http.StatusBadRequest, map[string]any{
 			"error":   "bad request",
-			"message": "deployment ID is required",
+			"message": "service and version are required",
 		})
 		return
 	}
 
-	err := api.service.ContinueDeployment(ctx, deployID)
+	err := api.service.ContinueDeployment(ctx, serviceName, versionName)
 	if err != nil {
 		if err == service.ErrDeploymentNotFound {
 			c.JSON(http.StatusNotFound, map[string]any{
@@ -309,7 +313,7 @@ func (api *Api) ContinueDeployment(c *fox.Context) {
 			})
 			return
 		}
-		log.Error().Err(err).Str("deployID", deployID).Msg("failed to continue deployment")
+		log.Error().Err(err).Str("service", serviceName).Str("version", versionName).Msg("failed to continue deployment")
 		c.JSON(http.StatusInternalServerError, map[string]any{
 			"error":   "internal server error",
 			"message": "failed to continue deployment",
@@ -322,20 +326,38 @@ func (api *Api) ContinueDeployment(c *fox.Context) {
 	})
 }
 
-// RollbackDeployment 回滚发布任务（POST /v1/deployments/:deployID/rollback）
+// RollbackDeployment 回滚发布任务（POST /v1/deployments/:service/:version/rollback）
 func (api *Api) RollbackDeployment(c *fox.Context) {
 	ctx := c.Request.Context()
-	deployID := c.Param("deployID")
+	serviceName := c.Param("service")
+	versionName := c.Param("version")
 
-	if deployID == "" {
+	if serviceName == "" || versionName == "" {
 		c.JSON(http.StatusBadRequest, map[string]any{
 			"error":   "bad request",
-			"message": "deployment ID is required",
+			"message": "service and version are required",
 		})
 		return
 	}
 
-	err := api.service.RollbackDeployment(ctx, deployID)
+	var req model.RollbackDeploymentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, map[string]any{
+			"error":   "bad request",
+			"message": "invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	if req.TargetVersion == "" {
+		c.JSON(http.StatusBadRequest, map[string]any{
+			"error":   "bad request",
+			"message": "target version is required",
+		})
+		return
+	}
+
+	err := api.service.RollbackDeployment(ctx, serviceName, versionName, &req)
 	if err != nil {
 		if err == service.ErrDeploymentNotFound {
 			c.JSON(http.StatusNotFound, map[string]any{
@@ -351,7 +373,7 @@ func (api *Api) RollbackDeployment(c *fox.Context) {
 			})
 			return
 		}
-		log.Error().Err(err).Str("deployID", deployID).Msg("failed to rollback deployment")
+		log.Error().Err(err).Str("service", serviceName).Str("version", versionName).Msg("failed to rollback deployment")
 		c.JSON(http.StatusInternalServerError, map[string]any{
 			"error":   "internal server error",
 			"message": "failed to rollback deployment",
@@ -360,6 +382,6 @@ func (api *Api) RollbackDeployment(c *fox.Context) {
 	}
 
 	c.JSON(http.StatusOK, map[string]any{
-		"message": "deployment rolled back successfully",
+		"message": "deployment rollback initiated successfully",
 	})
 }
