@@ -520,9 +520,16 @@ func (s *AlertService) buildExpression(rule *model.AlertRule, meta *model.AlertR
 		}
 	}
 
-	// 添加比较操作符和阈值
+	// 添加比较操作符和阈值（检查是否已经包含）
 	if meta.Threshold != 0 {
-		expr = fmt.Sprintf("%s %s %g", expr, rule.Op, meta.Threshold)
+		// 检查表达式是否已经包含比较操作符
+		hasComparison := strings.Contains(expr, " > ") || strings.Contains(expr, " < ") ||
+			strings.Contains(expr, " = ") || strings.Contains(expr, " != ") ||
+			strings.Contains(expr, " >= ") || strings.Contains(expr, " <= ")
+
+		if !hasComparison {
+			expr = fmt.Sprintf("%s %s %g", expr, rule.Op, meta.Threshold)
+		}
 	}
 
 	return expr
