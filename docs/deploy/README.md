@@ -26,8 +26,8 @@
 ┌─────────────────┐    方法调用    ┌─────────────────┐    网络通信    ┌─────────────────┐
 │   调度系统       │ ──────────────▶ │   发布系统       │ ──────────────▶ │   实例节点       │
 │                 │                │                 │                │                 │
-│  • 发布指令     │                │  • 执行发布操作  │                │  • 服务实例       │
-│  • 批次规划     │                │  • 状态跟踪      │                │  • 版本更新      │
+│  • 发布指令     │                │  • 发布操作      │                │  • 服务实例       │
+│  • 批次规划     │                │  • 实例管理      │                │  • 版本更新      │
 │  • 健康检查     │                │  • 回滚操作      │                │  • 状态上报      │
 │                 │                │                 │                │                │
 └─────────────────┘                └─────────────────┘                └─────────────────┘
@@ -80,24 +80,29 @@
 
 ### 4.1 DeployService接口
 
+#### 4.1.1 接口定义
+
 发布服务接口，负责发布和回滚操作的执行。
 
 ```go
 type DeployService interface {
-    ExecuteDeployment(params *DeployParams) (*OperationResult, error)
+    DeployNewService(params *DeployNewServiceParams) (*OperationResult, error)
+    DeployNewVersion(params *DeployNewVersionParams) (*OperationResult, error)
     ExecuteRollback(params *RollbackParams) (*OperationResult, error)
 }
 ```
 
-#### 4.1.1 ExecuteDeployment方法
+#### 4.1.2 方法说明
 
-触发指定服务版本的发布操作
+**DeployNewService方法**: 部署新服务并创建指定数量的实例
 
-#### 4.1.2 ExecuteRollback方法
+**DeployNewVersion方法**: 触发指定服务版本的发布操作
 
-对指定实例执行回滚操作，支持单实例或批量实例回滚
+**ExecuteRollback方法**: 对指定实例执行回滚操作，支持单实例或批量实例回滚
 
 ### 4.2 InstanceManager接口
+
+#### 4.2.1 接口定义
 
 实例管理接口，负责实例信息查询和状态管理，发布模块和服务管理模块都需要使用。
 
@@ -108,20 +113,70 @@ type InstanceManager interface {
 }
 ```
 
-#### 4.2.1 方法说明
+#### 4.2.2 方法说明
 
-**GetServiceInstances**: 获取指定服务的实例详细信息，可选择按版本过滤
+**GetServiceInstances方法**: 获取指定服务的实例详细信息，可选择按版本过滤
 
-**GetInstanceVersionHistory**: 获取指定实例的版本历史记录
+**GetInstanceVersionHistory方法**: 获取指定实例的版本历史记录
 
 ## 5. 内部工具函数
 
-**ValidatePackageURL**: 验证包URL的有效性和安全性
+### 5.1 **ValidatePackageURL**: 验证包URL的有效性
+```go
+func ValidatePackageURL(packageURL string) error
+```
 
-**GetServiceInstanceIDs**: 根据服务名和版本获取实例ID列表，用于内部批量操作
+### 5.2 **GetServiceInstanceInfos**: 根据服务名和版本获取实例信息列表
+```go
+func GetServiceInstanceInfos(serviceName string, version ...string) ([]*InstanceInfo, error)
+```
 
-**GetInstanceHost**: 根据实例ID获取实例的IP地址
+### 5.3 **GetInstanceIP**: 根据实例ID获取实例的IP地址
+```go
+func GetInstanceIP(instanceID string) (string, error)
+```
 
-**GetInstancePort**: 根据实例ID获取实例的端口号
+### 5.4 **GetInstancePort**: 根据实例ID获取实例的端口号
+```go
+func GetInstancePort(instanceID string) (int, error)
+```
 
-**CheckInstanceHealth**: 检查单个实例是否有响应，用于发布前验证目标实例的可用性
+### 5.5 **CheckInstanceHealth**: 检查实例的健康状态
+```go
+func CheckInstanceHealth(instanceIP string, instancePort int) (bool, error)
+```
+
+### 5.6 **GetAvailableHosts**: 获取所有可用的主机列表
+```go
+func GetAvailableHosts() ([]string, error)
+```
+
+### 5.7 **GetHostIp**: 根据主机名获取主机IP地址
+```go
+func GetHostIp(hostName string) (string, error)
+```
+
+### 5.8 **CheckHostHealth**: 检查主机的健康状态
+```go
+func CheckHostHealth(hostIpAddress string) (bool, error)
+```
+
+### 5.9 **SelectHostForNewInstance**: 为新实例选择合适的主机
+```go
+func SelectHostForNewInstance(availableHosts []string, service string, version string) (string, error)
+```
+
+### 5.10 **GenerateInstanceID**: 根据服务名生成实例ID
+```go
+func GenerateInstanceID(serviceName string) (string, error)
+```
+
+### 5.11 **GenerateInstanceIP**: 生成实例IP地址
+```go
+func GenerateInstanceIP() (string, error)
+```
+
+### 5.12 **GenerateInstance**: 创建实例
+```go
+func GenerateInstance(instanceID string, instanceIP string) error
+```
