@@ -3,14 +3,14 @@ package api
 import (
 	"net/http"
 
-	"github.com/fox-gonic/fox"
+	"github.com/gin-gonic/gin"
 	"github.com/qiniu/zeroops/internal/service_manager/model"
 	"github.com/qiniu/zeroops/internal/service_manager/service"
 	"github.com/rs/zerolog/log"
 )
 
 // setupInfoRouters 设置服务信息相关路由
-func (api *Api) setupInfoRouters(router *fox.Engine) {
+func (api *Api) setupInfoRouters(router *gin.Engine) {
 	// 服务列表和信息查询
 	router.GET("/v1/services", api.GetServices)
 	router.GET("/v1/services/:service/activeVersions", api.GetServiceActiveVersions)
@@ -26,7 +26,7 @@ func (api *Api) setupInfoRouters(router *fox.Engine) {
 // ===== 服务信息相关API =====
 
 // GetServices 获取所有服务列表（GET /v1/services）
-func (api *Api) GetServices(c *fox.Context) {
+func (api *Api) GetServices(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	response, err := api.service.GetServicesResponse(ctx)
@@ -43,7 +43,7 @@ func (api *Api) GetServices(c *fox.Context) {
 }
 
 // GetServiceActiveVersions 获取服务活跃版本（GET /v1/services/:service/activeVersions）
-func (api *Api) GetServiceActiveVersions(c *fox.Context) {
+func (api *Api) GetServiceActiveVersions(c *gin.Context) {
 	ctx := c.Request.Context()
 	serviceName := c.Param("service")
 
@@ -71,7 +71,7 @@ func (api *Api) GetServiceActiveVersions(c *fox.Context) {
 }
 
 // GetServiceAvailableVersions 获取可用服务版本（GET /v1/services/:service/availableVersions）
-func (api *Api) GetServiceAvailableVersions(c *fox.Context) {
+func (api *Api) GetServiceAvailableVersions(c *gin.Context) {
 	ctx := c.Request.Context()
 	serviceName := c.Param("service")
 	versionType := c.Query("type")
@@ -103,7 +103,7 @@ func (api *Api) GetServiceAvailableVersions(c *fox.Context) {
 }
 
 // GetServiceMetricTimeSeries 获取服务时序指标数据（GET /v1/metrics/:service/:name）
-func (api *Api) GetServiceMetricTimeSeries(c *fox.Context) {
+func (api *Api) GetServiceMetricTimeSeries(c *gin.Context) {
 	ctx := c.Request.Context()
 	serviceName := c.Param("service")
 	metricName := c.Param("name")
@@ -149,7 +149,7 @@ func (api *Api) GetServiceMetricTimeSeries(c *fox.Context) {
 // ===== 服务管理API（CRUD操作） =====
 
 // CreateService 创建服务（POST /v1/services）
-func (api *Api) CreateService(c *fox.Context) {
+func (api *Api) CreateService(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	var service model.Service
@@ -185,7 +185,7 @@ func (api *Api) CreateService(c *fox.Context) {
 }
 
 // UpdateService 更新服务信息（PUT /v1/services/:service）
-func (api *Api) UpdateService(c *fox.Context) {
+func (api *Api) UpdateService(c *gin.Context) {
 	ctx := c.Request.Context()
 	serviceName := c.Param("service")
 
@@ -232,7 +232,7 @@ func (api *Api) UpdateService(c *fox.Context) {
 }
 
 // DeleteService 删除服务（DELETE /v1/services/:service）
-func (api *Api) DeleteService(c *fox.Context) {
+func (api *Api) DeleteService(c *gin.Context) {
 	ctx := c.Request.Context()
 	serviceName := c.Param("service")
 

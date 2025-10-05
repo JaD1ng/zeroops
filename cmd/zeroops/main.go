@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/fox-gonic/fox"
+	"github.com/gin-gonic/gin"
 	alertapi "github.com/qiniu/zeroops/internal/alerting/api"
 	adb "github.com/qiniu/zeroops/internal/alerting/database"
 	"github.com/qiniu/zeroops/internal/alerting/service/healthcheck"
@@ -96,22 +96,24 @@ func main() {
 	go rem.Start(ctx, alertCh)
 
 	// start Prometheus anomaly detection scheduler
-	promInterval := parseDuration(cfg.Alerting.Prometheus.SchedulerInterval, 6*time.Hour)
+	promInterval := parseDuration(cfg.Alerting.Prometheus.SchedulerInterval, 5*time.Minute)
 	promStep := parseDuration(cfg.Alerting.Prometheus.QueryStep, time.Minute)
 	promRange := parseDuration(cfg.Alerting.Prometheus.QueryRange, 6*time.Hour)
 	promCfg := healthcheck.NewPrometheusConfigFromApp(&cfg.Alerting.Prometheus)
-	promClient := healthcheck.NewPrometheusClient(promCfg)
+	anomalyDetectClient := healthcheck.NewAnomalyDetectClient(promCfg)
 	go healthcheck.StartPrometheusScheduler(ctx, healthcheck.PrometheusDeps{
-		DB:               alertDB,
-		PrometheusClient: promClient,
-		Interval:         promInterval,
-		QueryStep:        promStep,
-		QueryRange:       promRange,
-		RulesetBase:      cfg.Alerting.Ruleset.APIBase,
-		RulesetTimeout:   parseDuration(cfg.Alerting.Ruleset.APITimeout, 10*time.Second),
+		DB:                  alertDB,
+		AnomalyDetectClient: anomalyDetectClient,
+		Interval:            promInterval,
+		QueryStep:           promStep,
+		QueryRange:          promRange,
+		RulesetBase:         cfg.Alerting.Ruleset.APIBase,
+		RulesetTimeout:      parseDuration(cfg.Alerting.Ruleset.APITimeout, 10*time.Second),
 	})
 
-	router := fox.New()
+	router := gin.New()
+	router.Use(gin.Logger())
+	router.Use(gin.Recovery())
 	router.Use(middleware.Authentication)
 	alertapi.NewApiWithConfig(router, cfg)
 	if err := serviceManagerSrv.UseApi(router); err != nil {

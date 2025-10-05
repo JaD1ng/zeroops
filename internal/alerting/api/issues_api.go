@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fox-gonic/fox"
+	"github.com/gin-gonic/gin"
 	adb "github.com/qiniu/zeroops/internal/alerting/database"
 	"github.com/qiniu/zeroops/internal/config"
 	"github.com/redis/go-redis/v9"
@@ -21,7 +21,7 @@ type IssueAPI struct {
 
 // RegisterIssueRoutes registers issue query routes. If rdb is nil, a client is created from env.
 // db can be nil; when nil, comments will be empty.
-func RegisterIssueRoutes(router *fox.Engine, rdb *redis.Client, db *adb.Database) {
+func RegisterIssueRoutes(router *gin.Engine, rdb *redis.Client, db *adb.Database) {
 	if rdb == nil {
 		rdb = newRedisFromEnv()
 	}
@@ -70,7 +70,7 @@ type comment struct {
 	Content   string `json:"content"`
 }
 
-func (api *IssueAPI) GetIssueByID(c *fox.Context) {
+func (api *IssueAPI) GetIssueByID(c *gin.Context) {
 	issueID := c.Param("issueID")
 	if issueID == "" {
 		c.JSON(http.StatusBadRequest, map[string]any{"error": map[string]any{"code": "INVALID_PARAMETER", "message": "missing issueID"}})
@@ -162,7 +162,7 @@ type issueListItem struct {
 	AlertSince string    `json:"alertSince"`
 }
 
-func (api *IssueAPI) ListIssues(c *fox.Context) {
+func (api *IssueAPI) ListIssues(c *gin.Context) {
 	start := strings.TrimSpace(c.Query("start"))
 	limitStr := strings.TrimSpace(c.Query("limit"))
 	if limitStr == "" {

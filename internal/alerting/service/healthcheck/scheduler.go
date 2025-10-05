@@ -27,11 +27,11 @@ type Deps struct {
 
 // PrometheusDeps holds dependencies for Prometheus anomaly detection task
 type PrometheusDeps struct {
-	DB               *adb.Database
-	PrometheusClient *PrometheusClient
-	Interval         time.Duration
-	QueryStep        time.Duration
-	QueryRange       time.Duration
+	DB                  *adb.Database
+	AnomalyDetectClient *AnomalyDetectClient
+	Interval            time.Duration
+	QueryStep           time.Duration
+	QueryRange          time.Duration
 	// ruleset API integration
 	RulesetBase    string
 	RulesetTimeout time.Duration
@@ -76,7 +76,7 @@ func StartScheduler(ctx context.Context, deps Deps) {
 // StartPrometheusScheduler starts the Prometheus anomaly detection scheduler
 func StartPrometheusScheduler(ctx context.Context, deps PrometheusDeps) {
 	if deps.Interval <= 0 {
-		deps.Interval = 6 * time.Hour // Default 6 hours
+		deps.Interval = 5 * time.Minute // Default 6 hours
 	}
 	if deps.QueryStep <= 0 {
 		deps.QueryStep = 1 * time.Minute // Default 1 minute step
@@ -274,7 +274,7 @@ func runPrometheusAnomalyDetection(ctx context.Context, deps PrometheusDeps) err
 	for _, query := range queries {
 		log.Debug().Str("query", query.Expr).Interface("labels", query.Labels).Msg("executing promql")
 
-		resp, err := deps.PrometheusClient.QueryRange(ctx, query.Expr, start, end, deps.QueryStep)
+		resp, err := deps.AnomalyDetectClient.QueryRange(ctx, query.Expr, start, end, deps.QueryStep)
 		if err != nil {
 			log.Error().Err(err).Str("query", query.Expr).Msg("Failed to execute PromQL query")
 			continue
@@ -285,8 +285,10 @@ func runPrometheusAnomalyDetection(ctx context.Context, deps PrometheusDeps) err
 			allQueries = append(allQueries, query)
 		}
 		allTimeSeries = append(allTimeSeries, resp.Data.Result...)
-		log.Debug().Int("series", len(resp.Data.Result)).Str("query", query.Expr).Msg("promql result series appended")
 
+		for _, ts := range resp.Data.Result {
+			log.Debug().Interface("metric", ts.Metric).Int("value", len(ts.Values)).Msg("promql result series appended")
+		}
 		// no file exports
 	}
 
@@ -313,18 +315,22 @@ func runPrometheusAnomalyDetection(ctx context.Context, deps PrometheusDeps) err
 			break
 		}
 		q := allQueries[i]
+		log.Debug().Any("q", q).Msg("per-series anomaly detection query")
 		// per-series anomaly detection
-		anomalies, derr := deps.PrometheusClient.detectAnomaliesForSingleTimeSeries(ctx, ts, &q)
+		anomalies, derr := deps.AnomalyDetectClient.detectAnomaliesForSingleTimeSeries(ctx, ts, &q)
 		if derr != nil {
 			log.Error().Err(derr).Msg("per-series anomaly detection failed")
 			continue
 		}
+		log.Debug().Any("anomalies", anomalies).Msg("per-series anomaly detection completed")
 		totalDetected += len(anomalies)
 
 		// filter by existing alert time ranges
 		filtered := FilterAnomaliesByAlertTimeRanges(anomalies, alertIssues)
+		log.Debug().Any("filtered", filtered).Msg("per-series anomaly detection filtered")
 		totalFiltered += len(filtered)
 		if len(filtered) == 0 {
+			log.Debug().Msg("no anomalies filtered")
 			continue
 		}
 
@@ -334,13 +340,16 @@ func runPrometheusAnomalyDetection(ctx context.Context, deps PrometheusDeps) err
 			log.Debug().Msg("skip threshold update due to missing service or alert_name")
 			continue
 		}
+		log.Debug().Str("alert_name", q.AlertName).Str("service", service).Msg("adjusting thresholds")
 		versionKey, version := detectVersionFromLabels(q.Labels)
+		log.Debug().Str("alert_name", q.AlertName).Str("service", service).Str("version_key", versionKey).Str("version", version).Msg("detect version from labels")
 		if version == "" {
 			log.Debug().Str("alert_name", q.AlertName).Str("service", service).Msg("skip update: version is empty in labels")
 			continue
 		}
 
 		baseTh, ok, terr := fetchExactThreshold(ctx, deps.DB, q.AlertName, service, versionKey, version)
+		log.Debug().Str("alert_name", q.AlertName).Str("service", service).Str("version", version).Float64("base_threshold", baseTh).Bool("ok", ok).Err(terr).Msg("fetch exact threshold")
 		if terr != nil {
 			log.Error().Err(terr).Str("alert_name", q.AlertName).Str("service", service).Str("version", version).Msg("fetch exact threshold failed")
 			continue
@@ -353,6 +362,7 @@ func runPrometheusAnomalyDetection(ctx context.Context, deps PrometheusDeps) err
 
 		// fetch all metas for this service (across versions)
 		metas, ferr := fetchMetasForService(ctx, deps.DB, q.AlertName, service)
+		log.Debug().Str("alert_name", q.AlertName).Str("service", service).Any("metas", metas).Msg("fetch metas for service")
 		if ferr != nil {
 			log.Error().Err(ferr).Str("alert_name", q.AlertName).Str("service", service).Msg("fetch metas failed")
 			continue
@@ -373,9 +383,11 @@ func runPrometheusAnomalyDetection(ctx context.Context, deps PrometheusDeps) err
 		targetMatched := false
 		for _, m := range metas {
 			isTarget := strings.Contains(m.LabelsJSON, fmt.Sprintf(`"%s":"%s"`, versionKey, version))
+			log.Debug().Str("labels", m.LabelsJSON).Bool("is_target", isTarget).Msg("metas appended")
 			if isTarget {
 				targetMatched = true
 				updates = append(updates, ruleMetaUpdate{Labels: m.LabelsJSON, Threshold: newThreshold})
+				log.Debug().Str("labels", m.LabelsJSON).Float64("1.threshold", m.Threshold).Float64("new_threshold", newThreshold).Msg("metas appended")
 				if math.Abs(m.Threshold-newThreshold) > eps {
 					changed = append(changed, struct {
 						LabelsJSON string
@@ -385,10 +397,12 @@ func runPrometheusAnomalyDetection(ctx context.Context, deps PrometheusDeps) err
 				}
 			} else {
 				updates = append(updates, ruleMetaUpdate{Labels: m.LabelsJSON, Threshold: m.Threshold})
+				log.Debug().Str("labels", m.LabelsJSON).Float64("2.threshold", m.Threshold).Float64("new_threshold", newThreshold).Msg("metas appended")
 			}
+			log.Debug().Str("labels", m.LabelsJSON).Float64("3.threshold", m.Threshold).Float64("new_threshold", newThreshold).Msg("metas appended")
 		}
 		if !targetMatched || len(changed) == 0 {
-			log.Debug().Str("alert_name", q.AlertName).Str("service", service).Str("version", version).Msg("no threshold change for exact version; skip")
+			log.Debug().Str("alert_name", q.AlertName).Str("service", service).Str("version", version).Bool("target_matched", targetMatched).Int("changed_count", len(changed)).Msg("no threshold change for exact version; skip")
 			continue
 		}
 
@@ -468,9 +482,12 @@ func fetchExactThreshold(ctx context.Context, db *adb.Database, alertName, servi
 // detectVersionFromLabels tries common keys for version and returns (key, value)
 func detectVersionFromLabels(labels map[string]string) (string, string) {
 	if v := labels["service_version"]; v != "" {
+		log.Debug().Str("labels", fmt.Sprintf("%v", labels)).Str("service_version", v).Msg("detect version from labels")
 		return "service_version", v
 	}
+
 	if v := labels["version"]; v != "" {
+		log.Debug().Str("labels", fmt.Sprintf("%v", labels)).Str("version", v).Msg("detect version from labels")
 		return "version", v
 	}
 	return "", ""

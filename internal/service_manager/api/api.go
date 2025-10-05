@@ -1,7 +1,7 @@
 package api
 
 import (
-	"github.com/fox-gonic/fox"
+	"github.com/gin-gonic/gin"
 	"github.com/qiniu/zeroops/internal/service_manager/database"
 	"github.com/qiniu/zeroops/internal/service_manager/service"
 )
@@ -9,10 +9,10 @@ import (
 type Api struct {
 	db      *database.Database
 	service *service.Service
-	router  *fox.Engine
+	router  *gin.Engine
 }
 
-func NewApi(db *database.Database, service *service.Service, router *fox.Engine) (*Api, error) {
+func NewApi(db *database.Database, service *service.Service, router *gin.Engine) (*Api, error) {
 	api := &Api{
 		db:      db,
 		service: service,
@@ -23,7 +23,7 @@ func NewApi(db *database.Database, service *service.Service, router *fox.Engine)
 	return api, nil
 }
 
-func (api *Api) setupRouters(router *fox.Engine) {
+func (api *Api) setupRouters(router *gin.Engine) {
 	// 服务信息相关路由
 	api.setupInfoRouters(router)
 

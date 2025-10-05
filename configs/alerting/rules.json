@@ -6,7 +6,7 @@
       "expr": "histogram_quantile(0.98, sum(rate(http_latency_seconds_bucket{}[2m])) by (service, service_version, le))",
       "op": ">",
       "severity": "P0",
-      "watch_time": "5 minutes",
+      "watch_time": "5m",
       "metas": [
         { "labels": { "service": "storage-service", "service_version": "1.0.0" }, "threshold": 1000 },
         { "labels": { "service": "queue-service", "service_version": "1.0.0" }, "threshold": 1000 },
@@ -19,7 +19,7 @@
       "expr": "histogram_quantile(0.98, sum(rate(http_latency_seconds_bucket{}[2m])) by (service, service_version, le))",
       "op": ">",
       "severity": "P1",
-      "watch_time": "4 minutes",
+      "watch_time": "4m",
       "metas": [
         { "labels": { "service": "storage-service", "service_version": "1.0.0" }, "threshold": 500 },
         { "labels": { "service": "queue-service", "service_version": "1.0.0" }, "threshold": 500 },
@@ -31,7 +31,7 @@
         "description":"HTTP error rate by service P0",
         "op":">",
         "severity":"P0",
-        "watch_time":"5 minutes",
+        "watch_time":"5m",
         "expr":"sum(rate(http_latency_seconds_count{\"http.status_code\"=~\"4..|5..\", \"http.route\"!=\"/metrics\"}[2m])) by (service, service_version) / sum(rate(http_latency_seconds_count{\"http.route\"!=\"/metrics\"}[2m])) by (service, service_version)",
         "metas":[
             {"labels":{"service":"storage-service","service_version":"1.0.0"},"threshold":5},
@@ -44,7 +44,7 @@
         "description":"HTTP error rate by service P1",
         "op":">",
         "severity":"P1",
-        "watch_time":"5 minutes",
+        "watch_time":"5m",
         "expr":"sum(rate(http_latency_seconds_count{\"http.status_code\"=~\"4..|5..\", \"http.route\"!=\"/metrics\"}[2m])) by (service, service_version) / sum(rate(http_latency_seconds_count{\"http.route\"!=\"/metrics\"}[2m])) by (service, service_version)",
         "metas":[
             {"labels":{"service":"storage-service","service_version":"1.0.0"},"threshold":3},
