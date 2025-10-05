@@ -3,12 +3,12 @@ package remediation
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"time"
 
 	adb "github.com/qiniu/zeroops/internal/alerting/database"
 	"github.com/qiniu/zeroops/internal/alerting/service/healthcheck"
+	"github.com/qiniu/zeroops/internal/config"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
 )
@@ -19,10 +19,25 @@ type Consumer struct {
 
 	// sleepFn allows overriding for tests
 	sleepFn func(time.Duration)
+
+	// config-driven
+	rollbackSleep time.Duration
+	rollbackURL   string
 }
 
 func NewConsumer(db *adb.Database, rdb *redis.Client) *Consumer {
 	return &Consumer{DB: db, Redis: rdb, sleepFn: time.Sleep}
+}
+
+func (c *Consumer) WithConfig(ac *config.RemediationConfig) *Consumer {
+	if ac == nil {
+		return c
+	}
+	if d, err := time.ParseDuration(ac.RollbackSleep); err == nil && d > 0 {
+		c.rollbackSleep = d
+	}
+	c.rollbackURL = ac.RollbackURL
+	return c
 }
 
 // Start consumes alert messages and performs a mocked rollback then marks restored.
@@ -31,14 +46,18 @@ func (c *Consumer) Start(ctx context.Context, ch <-chan healthcheck.AlertMessage
 		log.Warn().Msg("remediation consumer started without channel; no-op")
 		return
 	}
-	sleepDur := parseDuration(os.Getenv("REMEDIATION_ROLLBACK_SLEEP"), 30*time.Second)
+	sleepDur := c.rollbackSleep
+	if sleepDur <= 0 {
+		sleepDur = 30 * time.Second
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case m := <-ch:
 			// 1) Mock rollback: optional URL composition (unused)
-			_ = fmt.Sprintf(os.Getenv("REMEDIATION_ROLLBACK_URL"), deriveDeployID(&m))
+			tpl := c.rollbackURL
+			_ = fmt.Sprintf(tpl, deriveDeployID(&m))
 			// 2) Sleep to simulate rollback time
 			if c.sleepFn != nil {
 				c.sleepFn(sleepDur)

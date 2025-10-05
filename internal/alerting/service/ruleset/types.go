@@ -9,11 +9,12 @@ import (
 // excluding threshold information, which is managed separately via AlertRuleMeta.
 // Name is the business identifier and should align with Prometheus alert: field.
 type AlertRule struct {
-	Name        string // unique rule name, typically equals Prometheus alert name
-	Description string // human readable explanation
-	Expr        string // left-hand PromQL expression (e.g. p95 latency expression)
-	Op          string // comparison operator: one of >, <, =, !=
-	Severity    string // severity code such as P0, P1, P2
+	Name        string        // unique rule name, typically equals Prometheus alert name
+	Description string        // human readable explanation
+	Expr        string        // left-hand PromQL expression (e.g. p95 latency expression)
+	Op          string        // comparison operator: one of >, <, =, !=
+	Severity    string        // severity code such as P0, P1, P2
+	WatchTime   time.Duration // watch window; maps to Prometheus rule "for:" at rule level
 }
 
 // LabelMap represents a normalized set of label key-value pairs that identify a meta scope.
@@ -23,10 +24,9 @@ type LabelMap map[string]string
 // AlertRuleMeta holds threshold and watch duration for a specific rule under certain labels.
 // Threshold is a numeric boundary; WatchTime maps to Prometheus rule "for:" duration.
 type AlertRuleMeta struct {
-	AlertName string        // foreign key to AlertRule.Name
-	Labels    LabelMap      // normalized labels; {} means global default
-	Threshold float64       // numeric threshold
-	WatchTime time.Duration // watch window; exported or translated to Prometheus for:
+	AlertName string   // foreign key to AlertRule.Name
+	Labels    LabelMap // normalized labels; {} means global default
+	Threshold float64  // numeric threshold
 }
 
 // ChangeLog captures before/after changes for auditing and potential rollback.

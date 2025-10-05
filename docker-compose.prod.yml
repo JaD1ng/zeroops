@@ -1,0 +1,74 @@
+services:
+  alerting-ml:
+    build:
+      context: ./services/alerting-ml-python
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  zeroops:
+    build:
+      context: .
+      dockerfile: ./cmd/zeroops/Dockerfile
+    restart: unless-stopped
+    networks:
+      - default
+      - infra-network
+    depends_on:
+      - alerting-ml
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # 数据库配置 - 连接到现有的 postgres
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-5532}
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD:-your_secure_password}
+      DB_NAME: zeroops
+      DB_SSLMODE: disable
+      # Redis配置 - 连接到现有的 redis
+      REDIS_ADDR: ${REDIS_ADDR:-host.docker.internal:16379}
+      REDIS_PASSWORD: ""
+      REDIS_DB: 0
+      # 告警配置
+      HC_SCAN_INTERVAL: "10s"
+      HC_SCAN_BATCH: 200
+      HC_WORKERS: 2
+      REMEDIATION_ALERT_CHAN_SIZE: 1024
+      REMEDIATION_ROLLBACK_SLEEP: "30s"
+      # Prometheus配置
+      PROMETHEUS_URL: ${PROMETHEUS_URL:-http://10.210.10.33:9090}
+      PROMETHEUS_QUERY_TIMEOUT: "30s"
+      ANOMALY_DETECTION_API_URL: http://alerting-ml:8081/api/v1/anomaly/detect
+      ANOMALY_DETECTION_API_TIMEOUT: "10s"
+      PROMETHEUS_ANOMALY_INTERVAL: "6h"
+      PROMETHEUS_QUERY_STEP: "1m"
+      PROMETHEUS_QUERY_RANGE: "6h"
+      # Ruleset配置
+      ALERT_RULES_CONFIG_FILE: /app/configs/alerting/rules.json
+      RULESET_API_BASE: ${RULESET_API_BASE:-http://10.210.10.33:9999}
+      RULESET_API_TIMEOUT: "10s"
+      # Webhook认证
+      ALERT_WEBHOOK_BASIC_USER: ${WEBHOOK_USER:-alert}
+      ALERT_WEBHOOK_BASIC_PASS: ${WEBHOOK_PASS:-your_webhook_password}
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./config.docker.json:/app/config.json:ro
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+
+networks:
+  default:
+    name: zeroops_network
+  infra-network:
+    external: true
+    name: mock-s3_infra-network

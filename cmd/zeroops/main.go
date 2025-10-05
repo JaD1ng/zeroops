@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"time"
 
@@ -17,14 +16,32 @@ import (
 	servicemanager "github.com/qiniu/zeroops/internal/service_manager"
 
 	// releasesystem "github.com/qiniu/zeroops/internal/release_system/api"
+	"strings"
+
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
 func main() {
+	// load config first
 	log.Info().Msg("Starting zeroops api server")
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to load config")
+	}
+
+	// configure log level from config
+	switch strings.ToLower(cfg.Logging.Level) {
+	case "trace":
+		zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	case "debug":
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	case "warn", "warning":
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	case "error":
+		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+	default:
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	}
 
 	serviceManagerSrv, err := servicemanager.NewServiceManagerServer(cfg)
@@ -52,26 +69,47 @@ func main() {
 	// start healthcheck scheduler and remediation consumer
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	interval := parseDuration(os.Getenv("HC_SCAN_INTERVAL"), 10*time.Second)
-	batch := parseInt(os.Getenv("HC_SCAN_BATCH"), 200)
-	workers := parseInt(os.Getenv("HC_WORKERS"), 1)
+
+	// bootstrap alert rules from config if provided
+	if err := healthcheck.BootstrapRulesFromConfigWithApp(ctx, alertDB, &cfg.Alerting.Ruleset); err != nil {
+		log.Error().Err(err).Msg("bootstrap rules from config failed")
+	}
+	interval := parseDuration(cfg.Alerting.Healthcheck.Interval, 10*time.Second)
+	batch := cfg.Alerting.Healthcheck.Batch
+	workers := cfg.Alerting.Healthcheck.Workers
 	if workers < 1 {
 		workers = 1
 	}
-	alertChSize := parseInt(os.Getenv("REMEDIATION_ALERT_CHAN_SIZE"), 1024)
+	alertChSize := cfg.Alerting.Healthcheck.AlertChanSize
 	alertCh := make(chan healthcheck.AlertMessage, alertChSize)
 
 	for i := 0; i < workers; i++ {
 		go healthcheck.StartScheduler(ctx, healthcheck.Deps{
 			DB:       alertDB,
-			Redis:    healthcheck.NewRedisClientFromEnv(),
+			Redis:    healthcheck.NewRedisClientFromConfig(&cfg.Redis),
 			AlertCh:  alertCh,
 			Batch:    batch,
 			Interval: interval,
 		})
 	}
-	rem := remediation.NewConsumer(alertDB, healthcheck.NewRedisClientFromEnv())
+	rem := remediation.NewConsumer(alertDB, healthcheck.NewRedisClientFromConfig(&cfg.Redis)).WithConfig(&cfg.Alerting.Remediation)
 	go rem.Start(ctx, alertCh)
+
+	// start Prometheus anomaly detection scheduler
+	promInterval := parseDuration(cfg.Alerting.Prometheus.SchedulerInterval, 6*time.Hour)
+	promStep := parseDuration(cfg.Alerting.Prometheus.QueryStep, time.Minute)
+	promRange := parseDuration(cfg.Alerting.Prometheus.QueryRange, 6*time.Hour)
+	promCfg := healthcheck.NewPrometheusConfigFromApp(&cfg.Alerting.Prometheus)
+	promClient := healthcheck.NewPrometheusClient(promCfg)
+	go healthcheck.StartPrometheusScheduler(ctx, healthcheck.PrometheusDeps{
+		DB:               alertDB,
+		PrometheusClient: promClient,
+		Interval:         promInterval,
+		QueryStep:        promStep,
+		QueryRange:       promRange,
+		RulesetBase:      cfg.Alerting.Ruleset.APIBase,
+		RulesetTimeout:   parseDuration(cfg.Alerting.Ruleset.APITimeout, 10*time.Second),
+	})
 
 	router := fox.New()
 	router.Use(middleware.Authentication)

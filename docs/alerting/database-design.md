@@ -13,7 +13,7 @@
 
 ## 数据表设计
 
-### 1) alert_issues（告警问题表）
+### 1) talert_issues（告警问题表）
 
 存储告警问题的主要信息。
 
@@ -25,7 +25,8 @@
 | alert_state | enum(Pending, Restored, AutoRestored, InProcessing) | 处理状态 |
 | title | varchar(255) | 告警标题 |
 | labels | json | 标签，格式：[{key, value}] |
-| alert_since | TIMESTAMP(6) | 告警首次发生时间 |
+| alert_since | TIMESTAMP(6) | 告警发生时间 |
+| resolved_at | TIMESTAMP(6) | 告警结束时间 |
 
 **索引建议：**
 - PRIMARY KEY: `id`
@@ -78,14 +79,16 @@
 
 | 字段名 | 类型 | 说明 |
 |--------|------|------|
-| name | varchar(255) | 主键，告警规则名称 |
+| name | varchar(255) | 主键，告警规则名称 (示例：http_latency)|
 | description | text | 可读标题，可拼接渲染为可读的 title |
-| expr | text | 左侧业务指标表达式，（通常对应 PromQL 左侧的聚合，如 sum(apitime) by (service, version)） |
+| expr | text | 左侧业务指标表达式，（通常对应 PromQL 左侧的聚合,对应name业务实际的sql，如 sum(rate(http_request_duration{}[5m])) by (service, service_version)） |
 | op | varchar(4) | 阈值比较方式（枚举：>, <, =, !=） |
 | severity | varchar(32) | 告警等级，通常进入告警的 labels.severity |
+| watch_time | interval | 持续时长（映射 Prometheus rule 的 for:） |
 
 **约束建议：**
 - CHECK 约束：`op IN ('>', '<', '=', '!=')`
+- UNIQUE: `name`
 
 ⸻
 
@@ -94,9 +97,9 @@
 | 字段名 | 类型 | 说明 |
 |--------|------|------|
 | alert_name | varchar(255) | 关联 `alert_rules.name` |
-| labels | jsonb | 适用标签（示例：{"service":"s3","version":"v1"}）；为空 `{}` 表示全局 |
+| labels | jsonb | 适用标签（示例：{"service":"s3","service_version":"1.0.0"}）；为空 `{}` 表示全局 |
 | threshold | numeric | 阈值（会被渲染成特定规则的 threshold metric 数值） |
-| watch_time | interval | 持续时长（映射 Prometheus rule 的 for:） |
+
 
 **约束与索引建议：**
 - FOREIGN KEY: `(alert_name)` REFERENCES `alert_rules(name)` ON DELETE CASCADE

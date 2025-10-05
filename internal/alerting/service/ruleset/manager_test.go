@@ -3,7 +3,6 @@ package ruleset
 import (
 	"context"
 	"testing"
-	"time"
 )
 
 type memStore struct {
@@ -57,7 +56,7 @@ func TestManager_UpsertRuleMetas(t *testing.T) {
 	prom := NewExporterSync()
 	mgr := NewManager(store, prom, map[string]string{"service_version": "version"})
 
-	meta := &AlertRuleMeta{AlertName: "latency_p95_P0", Labels: LabelMap{"Service": "s3", "service_version": "v1"}, Threshold: 450, WatchTime: 2 * time.Minute}
+	meta := &AlertRuleMeta{AlertName: "latency_p95_P0", Labels: LabelMap{"Service": "s3", "service_version": "v1"}, Threshold: 450}
 	if err := mgr.UpsertRuleMetas(ctx, meta); err != nil {
 		t.Fatalf("upsert meta: %v", err)
 	}
@@ -66,7 +65,7 @@ func TestManager_UpsertRuleMetas(t *testing.T) {
 		t.Fatalf("normalized meta not found in store: %#v", store.metas)
 	}
 	// verify prom sync
-	if th, _, ok := prom.ForTestingGet("latency_p95_P0", LabelMap{"service": "s3", "version": "v1"}); !ok || th != 450 {
+	if th, ok := prom.ForTestingGet("latency_p95_P0", LabelMap{"service": "s3", "version": "v1"}); !ok || th != 450 {
 		t.Fatalf("prom sync threshold mismatch: th=%v ok=%v", th, ok)
 	}
 	// verify change log
@@ -75,7 +74,7 @@ func TestManager_UpsertRuleMetas(t *testing.T) {
 	}
 
 	// update path
-	meta2 := &AlertRuleMeta{AlertName: "latency_p95_P0", Labels: LabelMap{"service": "s3", "version": "v1"}, Threshold: 500, WatchTime: 3 * time.Minute}
+	meta2 := &AlertRuleMeta{AlertName: "latency_p95_P0", Labels: LabelMap{"service": "s3", "version": "v1"}, Threshold: 500}
 	if err := mgr.UpsertRuleMetas(ctx, meta2); err != nil {
 		t.Fatalf("upsert meta2: %v", err)
 	}

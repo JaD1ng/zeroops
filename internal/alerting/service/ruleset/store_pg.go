@@ -27,15 +27,16 @@ func (s *PgStore) WithTx(ctx context.Context, fn func(Store) error) error {
 
 func (s *PgStore) CreateRule(ctx context.Context, r *AlertRule) error {
 	const q = `
-	INSERT INTO alert_rules(name, description, expr, op, severity)
-	VALUES ($1, $2, $3, $4, $5)
+	INSERT INTO alert_rules(name, description, expr, op, severity, watch_time)
+	VALUES ($1, $2, $3, $4, $5, $6)
 	ON CONFLICT (name) DO UPDATE SET
 		description = EXCLUDED.description,
 		expr = EXCLUDED.expr,
 		op = EXCLUDED.op,
-		severity = EXCLUDED.severity
+		severity = EXCLUDED.severity,
+		watch_time = EXCLUDED.watch_time
 	`
-	_, err := s.DB.ExecContext(ctx, q, r.Name, r.Description, r.Expr, r.Op, r.Severity)
+	_, err := s.DB.ExecContext(ctx, q, r.Name, r.Description, r.Expr, r.Op, r.Severity, durationToPgInterval(r.WatchTime))
 	if err != nil {
 		return fmt.Errorf("create rule: %w", err)
 	}
@@ -43,7 +44,7 @@ func (s *PgStore) CreateRule(ctx context.Context, r *AlertRule) error {
 }
 
 func (s *PgStore) GetRule(ctx context.Context, name string) (*AlertRule, error) {
-	const q = `SELECT name, description, expr, op, severity FROM alert_rules WHERE name = $1`
+	const q = `SELECT name, description, expr, op, severity, watch_time FROM alert_rules WHERE name = $1`
 	rows, err := s.DB.QueryContext(ctx, q, name)
 	if err != nil {
 		return nil, fmt.Errorf("get rule: %w", err)
@@ -51,8 +52,12 @@ func (s *PgStore) GetRule(ctx context.Context, name string) (*AlertRule, error) 
 	defer rows.Close()
 	if rows.Next() {
 		var r AlertRule
-		if err := rows.Scan(&r.Name, &r.Description, &r.Expr, &r.Op, &r.Severity); err != nil {
+		var watch pgtype.Interval
+		if err := rows.Scan(&r.Name, &r.Description, &r.Expr, &r.Op, &r.Severity, &watch); err != nil {
 			return nil, fmt.Errorf("scan rule: %w", err)
+		}
+		if d, err := pgIntervalToDuration(watch); err == nil {
+			r.WatchTime = d
 		}
 		return &r, nil
 	}
@@ -60,8 +65,8 @@ func (s *PgStore) GetRule(ctx context.Context, name string) (*AlertRule, error) 
 }
 
 func (s *PgStore) UpdateRule(ctx context.Context, r *AlertRule) error {
-	const q = `UPDATE alert_rules SET description=$2, expr=$3, op=$4, severity=$5 WHERE name=$1`
-	_, err := s.DB.ExecContext(ctx, q, r.Name, r.Description, r.Expr, r.Op, r.Severity)
+	const q = `UPDATE alert_rules SET description=$2, expr=$3, op=$4, severity=$5, watch_time=$6 WHERE name=$1`
+	_, err := s.DB.ExecContext(ctx, q, r.Name, r.Description, r.Expr, r.Op, r.Severity, durationToPgInterval(r.WatchTime))
 	if err != nil {
 		return fmt.Errorf("update rule: %w", err)
 	}
@@ -83,17 +88,13 @@ func (s *PgStore) UpsertMeta(ctx context.Context, m *AlertRuleMeta) (bool, error
 		return false, fmt.Errorf("marshal labels: %w", err)
 	}
 
-	// Convert time.Duration to pgtype.Interval
-	interval := durationToPgInterval(m.WatchTime)
-
 	const q = `
-	INSERT INTO alert_rule_metas(alert_name, labels, threshold, watch_time)
-	VALUES ($1, $2::jsonb, $3, $4)
+	INSERT INTO alert_rule_metas(alert_name, labels, threshold)
+	VALUES ($1, $2::jsonb, $3)
 	ON CONFLICT (alert_name, labels) DO UPDATE SET
-		threshold=EXCLUDED.threshold,
-		watch_time=EXCLUDED.watch_time
+		threshold=EXCLUDED.threshold
 	`
-	_, err = s.DB.ExecContext(ctx, q, m.AlertName, string(labelsJSON), m.Threshold, interval)
+	_, err = s.DB.ExecContext(ctx, q, m.AlertName, string(labelsJSON), m.Threshold)
 	if err != nil {
 		return false, fmt.Errorf("upsert meta: %w", err)
 	}
@@ -107,7 +108,7 @@ func (s *PgStore) GetMetas(ctx context.Context, name string, labels LabelMap) ([
 		return nil, fmt.Errorf("marshal labels for get: %w", err)
 	}
 	const q = `
-	SELECT alert_name, labels, threshold, watch_time
+	SELECT alert_name, labels, threshold
 	FROM alert_rule_metas
 	WHERE alert_name = $1 AND labels = $2::jsonb
 	`
@@ -121,8 +122,7 @@ func (s *PgStore) GetMetas(ctx context.Context, name string, labels LabelMap) ([
 		var alertName string
 		var labelsRaw string
 		var threshold float64
-		var watch pgtype.Interval
-		if err := rows.Scan(&alertName, &labelsRaw, &threshold, &watch); err != nil {
+		if err := rows.Scan(&alertName, &labelsRaw, &threshold); err != nil {
 			return nil, fmt.Errorf("scan meta: %w", err)
 		}
 		lm := LabelMap{}
@@ -131,10 +131,6 @@ func (s *PgStore) GetMetas(ctx context.Context, name string, labels LabelMap) ([
 		}
 		meta := &AlertRuleMeta{AlertName: alertName, Labels: lm, Threshold: threshold}
 
-		// Convert pgtype.Interval to time.Duration
-		if duration, err := pgIntervalToDuration(watch); err == nil {
-			meta.WatchTime = duration
-		}
 		res = append(res, meta)
 	}
 	return res, nil

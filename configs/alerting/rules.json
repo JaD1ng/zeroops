@@ -1,0 +1,71 @@
+{
+  "rules": [
+    {
+      "name": "http_request_latency_p98_seconds_P0",
+      "description": "HTTP latency P98 threshold (P0)",
+      "expr": "histogram_quantile(0.98, sum(rate(http_latency_seconds_bucket{}[2m])) by (service, service_version, le))",
+      "op": ">",
+      "severity": "P0",
+      "watch_time": "5 minutes",
+      "metas": [
+        { "labels": { "service": "storage-service", "service_version": "1.0.0" }, "threshold": 1000 },
+        { "labels": { "service": "queue-service", "service_version": "1.0.0" }, "threshold": 1000 },
+        { "labels": { "service": "metadata-service", "service_version": "1.0.0" }, "threshold": 1000 }
+      ]
+    },
+    {
+      "name": "http_request_latency_p98_seconds_P1",
+      "description": "HTTP latency P98 threshold (P1)",
+      "expr": "histogram_quantile(0.98, sum(rate(http_latency_seconds_bucket{}[2m])) by (service, service_version, le))",
+      "op": ">",
+      "severity": "P1",
+      "watch_time": "4 minutes",
+      "metas": [
+        { "labels": { "service": "storage-service", "service_version": "1.0.0" }, "threshold": 500 },
+        { "labels": { "service": "queue-service", "service_version": "1.0.0" }, "threshold": 500 },
+        { "labels": { "service": "metadata-service", "service_version": "1.0.0" }, "threshold": 500 }
+      ]
+    },
+    {
+        "name":"http_error_rate_by_service_P0",
+        "description":"HTTP error rate by service P0",
+        "op":">",
+        "severity":"P0",
+        "watch_time":"5 minutes",
+        "expr":"sum(rate(http_latency_seconds_count{\"http.status_code\"=~\"4..|5..\", \"http.route\"!=\"/metrics\"}[2m])) by (service, service_version) / sum(rate(http_latency_seconds_count{\"http.route\"!=\"/metrics\"}[2m])) by (service, service_version)",
+        "metas":[
+            {"labels":{"service":"storage-service","service_version":"1.0.0"},"threshold":5},
+            {"labels":{"service":"queue-service","service_version":"1.0.0"},"threshold":5},
+            {"labels":{"service":"metadata-service","service_version":"1.0.0"},"threshold":5}
+        ]
+    },
+    {
+        "name":"http_error_rate_by_service_P1",
+        "description":"HTTP error rate by service P1",
+        "op":">",
+        "severity":"P1",
+        "watch_time":"5 minutes",
+        "expr":"sum(rate(http_latency_seconds_count{\"http.status_code\"=~\"4..|5..\", \"http.route\"!=\"/metrics\"}[2m])) by (service, service_version) / sum(rate(http_latency_seconds_count{\"http.route\"!=\"/metrics\"}[2m])) by (service, service_version)",
+        "metas":[
+            {"labels":{"service":"storage-service","service_version":"1.0.0"},"threshold":3},
+            {"labels":{"service":"queue-service","service_version":"1.0.0"},"threshold":3},
+            {"labels":{"service":"metadata-service","service_version":"1.0.0"},"threshold":3}
+        ]
+    },
+    {
+      "name": "system_network_qps_per_second_P0",
+      "description": "System network QPS per second (P0)",
+      "expr": "system_network_qps_per_second{}",
+      "op": ">",
+      "severity": "P0",
+      "watch_time": "1m",
+      "metas": [
+        { "labels": { "service": "storage-service", "service_version": "1.0.0" }, "threshold": 1000 },
+        { "labels": { "service": "queue-service", "service_version": "1.0.0" }, "threshold": 1000 },
+        { "labels": { "service": "metadata-service", "service_version": "1.0.0" }, "threshold": 1000 }
+      ]
+    }
+  ]
+}
+
+

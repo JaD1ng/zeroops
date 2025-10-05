@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 )
 
 // ExporterSync is an in-memory PromSync implementation that maintains threshold/watch values
@@ -13,13 +12,11 @@ import (
 type ExporterSync struct {
 	mu         sync.RWMutex
 	thresholds map[string]float64
-	watchTimes map[string]time.Duration
 }
 
 func NewExporterSync() *ExporterSync {
 	return &ExporterSync{
 		thresholds: make(map[string]float64),
-		watchTimes: make(map[string]time.Duration),
 	}
 }
 
@@ -38,7 +35,6 @@ func (e *ExporterSync) DeleteFromPrometheus(ctx context.Context, name string) er
 	for k := range e.thresholds {
 		if len(k) >= len(prefix) && k[:len(prefix)] == prefix {
 			delete(e.thresholds, k)
-			delete(e.watchTimes, k)
 		}
 	}
 	return nil
@@ -52,16 +48,14 @@ func (e *ExporterSync) SyncMetaToPrometheus(ctx context.Context, m *AlertRuleMet
 	defer e.mu.Unlock()
 	key := e.keyFor(m.AlertName, m.Labels)
 	e.thresholds[key] = m.Threshold
-	e.watchTimes[key] = m.WatchTime
 	return nil
 }
 
 // ForTestingGet exposes current values for assertions in unit tests.
-func (e *ExporterSync) ForTestingGet(rule string, labels LabelMap) (threshold float64, watch time.Duration, ok bool) {
+func (e *ExporterSync) ForTestingGet(rule string, labels LabelMap) (threshold float64, ok bool) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	key := e.keyFor(rule, labels)
-	v, ok1 := e.thresholds[key]
-	w, ok2 := e.watchTimes[key]
-	return v, w, ok1 && ok2
+	v, ok := e.thresholds[key]
+	return v, ok
 }

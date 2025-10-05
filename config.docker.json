@@ -1,0 +1,19 @@
+{
+  "server": { "bindAddr": ":8080" },
+  "logging": { "level": "info" },
+  "database": {
+    "host": "host.docker.internal",
+    "port": 5532,
+    "user": "postgres",
+    "password": "postgres123",
+    "dbname": "zeroops",
+    "sslmode": "disable"
+  },
+  "redis": { "addr": "host.docker.internal:16379", "password": "", "db": 0 },
+  "alerting": {
+    "healthcheck": { "interval": "10s", "batch": 200, "workers": 2, "alertChanSize": 1024 },
+    "prometheus": { "url": "http://10.210.10.33:9090", "queryTimeout": "30s", "anomalyAPIUrl": "http://alerting-ml:8081/api/v1/anomaly/detect", "anomalyAPITimeout": "10s", "schedulerInterval": "6h", "queryStep": "1m", "queryRange": "6h" },
+    "ruleset": { "configFile": "/app/configs/alerting/rules.json", "apiBase": "http://10.210.10.33:9999", "apiTimeout": "10s" },
+    "receiver": { "basicUser": "alert", "basicPass": "REDACTED", "bearer": "" }
+  }
+}

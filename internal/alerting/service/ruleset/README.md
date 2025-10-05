@@ -6,7 +6,7 @@
 
 ## 1) 目标与边界（已实现）
 
-- 通过 `alert_rules` 与 `alert_rule_metas`，为同一告警规则按标签维度（如 `service`、`version`）配置阈值与持续时间（`watch_time`）。
+- 通过 `alert_rules` 与 `alert_rule_metas`，为同一告警规则按标签维度（如 `service`、`version`）配置阈值；持续时间（`watch_time`）在 `alert_rules` 表中维护。
 - 变更阈值后，立刻同步到内存 Exporter（无需 Prometheus reload）。
 - 多告警等级（P0/P1…）通过“多条规则”实现（如 `latency_p95_P0` 与 `latency_p95_P1`）。
 - 记录变更日志，支持审计，便于后续扩展回滚能力。
@@ -25,6 +25,7 @@ type AlertRule struct {
     Expr        string
     Op          string
     Severity    string
+    WatchTime   time.Duration
 }
 
 type LabelMap map[string]string
@@ -33,7 +34,6 @@ type AlertRuleMeta struct {
     AlertName string
     Labels    LabelMap
     Threshold float64
-    WatchTime time.Duration // interval 映射
 }
 
 type ChangeLog struct {
@@ -108,7 +108,7 @@ func (m *Manager) UpsertRuleMetas(ctx context.Context, meta *AlertRuleMeta) erro
 
 ## 3) Prometheus 同步
 
-- 实现为内存版 Exporter（`ExporterSync`），维护 `(rule + 规范化 labels) → {threshold, watch_time}`。
+- 实现为内存版 Exporter（`ExporterSync`），维护 `(rule + 规范化 labels) → {threshold}`；`watch_time` 由 `alert_rules` 提供。
 - `SyncMetaToPrometheus` 直接更新内存映射，变更即时生效。
 - `AddToPrometheus`/`DeleteFromPrometheus` 作为占位，当前不写规则文件。
 - 如需以 metrics 暴露阈值，可在同进程 `/metrics` 将 `ExporterSync` 中的映射导出（按规则维度命名指标）。
@@ -133,12 +133,11 @@ func (m *Manager) UpsertRuleMetas(ctx context.Context, meta *AlertRuleMeta) erro
 ### 5.1 UPSERT Meta（带审计在应用层做）
 
 ```sql
--- 假设参数：$1 alert_name, $2 labels::jsonb, $3 threshold::numeric, $4 watch::interval
-INSERT INTO alert_rule_metas(alert_name, labels, threshold, watch_time)
-VALUES ($1, $2, $3, $4)
+-- 假设参数：$1 alert_name, $2 labels::jsonb, $3 threshold::numeric
+INSERT INTO alert_rule_metas(alert_name, labels, threshold)
+VALUES ($1, $2, $3)
 ON CONFLICT (alert_name, labels) DO UPDATE SET
   threshold  = EXCLUDED.threshold,
-  watch_time = EXCLUDED.watch_time,
   updated_at = now();
 ```
 
@@ -208,8 +207,8 @@ go test ./internal/alerting/service/ruleset -v
   - 在 `alert_rules` 插入一条规则，如：`latency_p95_P0`。
 - 启动 Exporter/服务：
   - 代码中使用 `NewExporterSync()` 并注入到 `NewManager(...)`。
-  - 通过 `Manager.UpsertRuleMetas` 传入 `AlertRuleMeta{AlertName:"latency_p95_P0", Labels:{service:"s3",version:"v1"}, Threshold:450, WatchTime:2m}`。
-  - 验证内存 Exporter `ForTestingGet` 返回阈值为 450。
+    - 通过 `Manager.UpsertRuleMetas` 传入 `AlertRuleMeta{AlertName:"latency_p95_P0", Labels:{service:"s3",service_version:"1.0.4"}, Threshold:450}`。
+    - 验证内存 Exporter `ForTestingGet` 返回阈值为 450；`watch_time` 从规则读取。
 - 变更验证：
   - 再次调用 `UpsertRuleMetas`，阈值改为 500，检查 `alert_meta_change_logs` 新增 Update 记录。
 - 回滚演练：

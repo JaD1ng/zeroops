@@ -133,11 +133,11 @@ func (m *Manager) prepareChangeLog(oldMeta, newMeta *AlertRuleMeta) *ChangeLog {
 	var oldW, newW *time.Duration
 	if oldMeta != nil {
 		oldTh = &oldMeta.Threshold
-		oldW = &oldMeta.WatchTime
+		oldW = nil
 	}
 	if newMeta != nil {
 		newTh = &newMeta.Threshold
-		newW = &newMeta.WatchTime
+		newW = nil
 	}
 
 	// Generate ID and timestamp outside of transaction
@@ -183,9 +183,7 @@ func validateMeta(m *AlertRuleMeta) error {
 	if !isFinite(m.Threshold) {
 		return ErrInvalidMeta
 	}
-	if m.WatchTime < 0 {
-		return ErrInvalidMeta
-	}
+	// WatchTime moved to alert_rules; meta no longer validates watch time here.
 	return nil
 }
 

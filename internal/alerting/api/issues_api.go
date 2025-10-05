@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/fox-gonic/fox"
 	adb "github.com/qiniu/zeroops/internal/alerting/database"
+	"github.com/qiniu/zeroops/internal/config"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -30,19 +30,13 @@ func RegisterIssueRoutes(router *fox.Engine, rdb *redis.Client, db *adb.Database
 	router.GET("/v1/issues", api.ListIssues)
 }
 
-func newRedisFromEnv() *redis.Client {
-	addr := os.Getenv("REDIS_ADDR")
-	pass := os.Getenv("REDIS_PASSWORD")
-	var db int
-	if v := os.Getenv("REDIS_DB"); v != "" {
-		if d, err := strconv.Atoi(v); err == nil {
-			db = d
-		}
+func newRedisFromEnv() *redis.Client { return nil }
+
+func newRedisFromConfig(c *config.RedisConfig) *redis.Client {
+	if c == nil {
+		return newRedisFromEnv()
 	}
-	if addr == "" {
-		addr = "localhost:6379"
-	}
-	return redis.NewClient(&redis.Options{Addr: addr, Password: pass, DB: db})
+	return redis.NewClient(&redis.Options{Addr: c.Addr, Password: c.Password, DB: c.DB})
 }
 
 type labelKV struct {
