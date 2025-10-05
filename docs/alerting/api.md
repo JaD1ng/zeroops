@@ -126,7 +126,7 @@ GET /v1/issues/{issueID}
 |--------|------|------|
 | id | string | 告警问题唯一标识 |
 | state | string | 告警工单的生命周期状态状态：`Open`、`Closed` |
-| level | string | 告警等级：`P0`、`P1`、`P2`、`Warning` |
+| level | string | 告警等级：`P0`、`P1`、`P2` |
 | alertState | string | 告警本身的实时状态：`Pending`、`Restored`、`AutoRestored`、`InProcessing` |
 | title | string | 告警标题描述 |
 | labels | Label[] | 标签数组 |

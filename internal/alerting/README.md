@@ -162,12 +162,35 @@ until docker exec zeroops-pg pg_isready -U postgres >/dev/null 2>&1; do sleep 0.
 初始化/校验最小表（不存在则创建）：
 
 ```bash
-docker exec -i zeroops-pg psql -U postgres -d zeroops -c \
-  "CREATE TABLE IF NOT EXISTS alert_issues (id text primary key, state text, level text, alert_state text, title text, labels json, alert_since timestamp);"
-docker exec -i zeroops-pg psql -U postgres -d zeroops -c \
+docker exec -i zeroops-postgres-1 psql -U postgres -d zeroops -c \
+  "CREATE TABLE IF NOT EXISTS alert_issues (id text primary key, state text, level text, alert_state text, title text, labels json, alert_since timestamp, resolved_at timestamp);"
+docker exec -i zeroops-postgres-1 psql -U postgres -d zeroops -c \
   "CREATE TABLE IF NOT EXISTS service_states (service text, version text, report_at timestamp, resolved_at timestamp, health_state text, alert_issue_ids text[], PRIMARY KEY(service,version));"
-docker exec -i zeroops-pg psql -U postgres -d zeroops -c \
+docker exec -i zeroops-postgres-1 psql -U postgres -d zeroops -c \
   "CREATE TABLE IF NOT EXISTS alert_issue_comments (issue_id text, create_at timestamp, content text, PRIMARY KEY(issue_id, create_at));"
+```
+
+### 2) 初始化/重置规则表（alert_rules / alert_rule_metas）
+
+注意：该脚本会 DROP 并重建 `alert_rules` 与 `alert_rule_metas`，仅用于本地/开发环境。
+
+脚本位置：`scripts/sql/alert_rules_bootstrap.sql`
+
+运行方式（任选一种）：
+
+```bash
+# 方式 A：通过 docker 容器执行（推荐 dev，本仓文档默认使用名为 zeroops-postgres-1 的容器）
+cat scripts/sql/alert_rules_bootstrap.sql | docker exec -i zeroops-postgres-1 psql -U postgres -d zeroops
+
+# 方式 B：本机已安装 psql 客户端
+psql -U postgres -d zeroops -f scripts/sql/alert_rules_bootstrap.sql
+```
+
+验证：
+
+```bash
+docker exec -i zeroops-postgres-1 psql -U postgres -d zeroops -c "SELECT name, severity FROM alert_rules;"
+docker exec -i zeroops-postgres-1 psql -U postgres -d zeroops -c "SELECT alert_name, labels, threshold FROM alert_rule_metas;"
 ```
 
 ### 2) 清空数据库与缓存（可选，保证从空开始）

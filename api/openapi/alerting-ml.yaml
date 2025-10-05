@@ -1,0 +1,94 @@
+openapi: 3.0.3
+info:
+  title: alerting-ml service
+  version: 0.1.0
+  description: HTTP API for time series anomaly detection using IsolationForest
+servers:
+  - url: http://localhost:8081
+paths:
+  /api/v1/anomaly/detect:
+    post:
+      summary: Detect anomalies in a single time series
+      operationId: detectAnomalies
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DetectRequest'
+      responses:
+        '200':
+          description: Detection result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetectResponse'
+        '400':
+          description: Invalid input
+        '500':
+          description: Internal error
+components:
+  schemas:
+    Metadata:
+      type: object
+      properties:
+        alert_name:
+          type: string
+        severity:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+    DataPoint:
+      type: object
+      required: [timestamp, value]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        value:
+          type: number
+          format: double
+    DetectRequest:
+      type: object
+      required: [data]
+      properties:
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataPoint'
+        contamination:
+          type: number
+          default: 0.05
+        random_state:
+          type: integer
+          default: 42
+        ratio_threshold:
+          type: number
+          default: 0.2
+        streak_threshold:
+          type: integer
+          default: 20
+    Anomaly:
+      type: object
+      required: [start, end]
+      properties:
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+    DetectResponse:
+      type: object
+      properties:
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+        anomalies:
+          type: array
+          items:
+            $ref: '#/components/schemas/Anomaly'
+

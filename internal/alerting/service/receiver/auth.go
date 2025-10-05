@@ -7,7 +7,25 @@ import (
 	"github.com/fox-gonic/fox"
 )
 
+var (
+	cfgBasicUser string
+	cfgBasicPass string
+	cfgBearer    string
+)
+
+// ConfigureAuth sets credentials for webhook auth (config-driven). Empty values disable that auth type.
+func ConfigureAuth(user, pass, bearer string) {
+	cfgBasicUser = user
+	cfgBasicPass = pass
+	cfgBearer = bearer
+}
+
 func authEnabled() bool {
+	// prefer config
+	if cfgBasicUser != "" || cfgBasicPass != "" || cfgBearer != "" {
+		return true
+	}
+	// fallback to env for backward compatibility
 	return os.Getenv("ALERT_WEBHOOK_BASIC_USER") != "" ||
 		os.Getenv("ALERT_WEBHOOK_BASIC_PASS") != "" ||
 		os.Getenv("ALERT_WEBHOOK_BEARER") != ""
@@ -19,9 +37,16 @@ func AuthMiddleware(c *fox.Context) bool {
 		return true
 	}
 
-	user := os.Getenv("ALERT_WEBHOOK_BASIC_USER")
-	pass := os.Getenv("ALERT_WEBHOOK_BASIC_PASS")
-	bearer := os.Getenv("ALERT_WEBHOOK_BEARER")
+	// prefer config
+	user := cfgBasicUser
+	pass := cfgBasicPass
+	bearer := cfgBearer
+	// fallback to env if not set in config
+	if user == "" && pass == "" && bearer == "" {
+		user = os.Getenv("ALERT_WEBHOOK_BASIC_USER")
+		pass = os.Getenv("ALERT_WEBHOOK_BASIC_PASS")
+		bearer = os.Getenv("ALERT_WEBHOOK_BEARER")
+	}
 
 	if user != "" || pass != "" {
 		u, p, ok := c.Request.BasicAuth()

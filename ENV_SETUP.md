@@ -1,10 +1,27 @@
-# 环境变量设置指南
+# 配置文件与环境变量指南
 
 ## 概述
 
-ZeroOps 项目需要配置 API 密钥来使用 AI 模型。本文档说明如何正确设置环境变量，包括模型配置、搜索后端、评估器设置等。
+ZeroOps 现已支持通过配置文件集中管理参数（推荐）。同时也兼容环境变量方式。
 
-## 方法1：使用 .env 文件（推荐）
+## 使用配置文件（推荐）
+
+1) 复制示例并编辑
+
+```bash
+cp config.example.json config.json
+vi config.json
+```
+
+2) 以配置文件启动服务
+
+```bash
+go run ./cmd/zeroops -f $(pwd)/config.json
+```
+
+配置文件中的字段包括：`server`、`logging`、`database`、`redis`、`alerting.healthcheck/prometheus/remediation/ruleset/receiver`。
+
+## 方法1：使用 .env 文件（可选）
 
 ### 步骤1：创建 .env 文件
 在项目根目录创建 `.env` 文件：
