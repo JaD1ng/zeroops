@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS service_states (
     report_at TIMESTAMP,
     resolved_at TIMESTAMP,
     health_state VARCHAR(50),
-    correlation_id VARCHAR(255),
+    alert_issue_ids VARCHAR(255),
     PRIMARY KEY (service, version),
     FOREIGN KEY (service) REFERENCES services(name) ON DELETE CASCADE
 );
