@@ -3,7 +3,7 @@ module github.com/qiniu/zeroops
 go 1.24
 
 require (
-	github.com/fox-gonic/fox v0.0.6
+	github.com/gin-gonic/gin v1.10.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.5.5
 	github.com/lib/pq v1.10.9

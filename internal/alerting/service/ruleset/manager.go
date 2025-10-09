@@ -2,9 +2,12 @@ package ruleset
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 var (
@@ -77,7 +80,23 @@ func (m *Manager) UpsertRuleMetas(ctx context.Context, meta *AlertRuleMeta) erro
 	if meta == nil {
 		return ErrInvalidMeta
 	}
+	// diagnostics: log labels before/after normalization and canonical key
+	beforeLabels := meta.Labels
 	meta.Labels = NormalizeLabels(meta.Labels, m.aliasMap)
+	var beforeJSON, afterJSON string
+	if b, err := json.Marshal(beforeLabels); err == nil {
+		beforeJSON = string(b)
+	}
+	if a, err := json.Marshal(meta.Labels); err == nil {
+		afterJSON = string(a)
+	}
+	log.Debug().
+		Str("alert_name", meta.AlertName).
+		Str("labels_before", beforeJSON).
+		Str("labels_after", afterJSON).
+		Str("labels_ckey", CanonicalLabelKey(meta.Labels)).
+		Float64("threshold", meta.Threshold).
+		Msg("ruleset UpsertRuleMetas normalized labels")
 	if err := validateMeta(meta); err != nil {
 		return err
 	}

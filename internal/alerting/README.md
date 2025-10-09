@@ -170,9 +170,9 @@ docker exec -i zeroops-postgres-1 psql -U postgres -d zeroops -c \
   "CREATE TABLE IF NOT EXISTS alert_issue_comments (issue_id text, create_at timestamp, content text, PRIMARY KEY(issue_id, create_at));"
 ```
 
-### 2) 初始化/重置规则表（alert_rules / alert_rule_metas）
+### 2) 初始化/重置规则表（alert_rules / alert_rule_metas / alert_meta_change_logs）
 
-注意：该脚本会 DROP 并重建 `alert_rules` 与 `alert_rule_metas`，仅用于本地/开发环境。
+注意：该脚本会 DROP 并重建 `alert_rules`、`alert_rule_metas` 和 `alert_meta_change_logs`，仅用于本地/开发环境。
 
 脚本位置：`scripts/sql/alert_rules_bootstrap.sql`
 
@@ -191,12 +191,13 @@ psql -U postgres -d zeroops -f scripts/sql/alert_rules_bootstrap.sql
 ```bash
 docker exec -i zeroops-postgres-1 psql -U postgres -d zeroops -c "SELECT name, severity FROM alert_rules;"
 docker exec -i zeroops-postgres-1 psql -U postgres -d zeroops -c "SELECT alert_name, labels, threshold FROM alert_rule_metas;"
+docker exec -i zeroops-postgres-1 psql -U postgres -d zeroops -c "SELECT alert_name, change_type, change_time FROM alert_meta_change_logs;"
 ```
 
 ### 2) 清空数据库与缓存（可选，保证从空开始）
 
 ```bash
-docker exec -i zeroops-pg psql -U postgres -d zeroops -c "TRUNCATE TABLE alert_issue_comments, service_states, alert_issues;"
+docker exec -i zeroops-pg psql -U postgres -d zeroops -c "TRUNCATE TABLE alert_issue_comments, service_states, alert_issues, alert_meta_change_logs;"
 docker exec -i zeroops-redis redis-cli --raw DEL $(docker exec -i zeroops-redis redis-cli --raw KEYS 'alert:*' | tr '\n' ' ') 2>/dev/null || true
 docker exec -i zeroops-redis redis-cli --raw DEL $(docker exec -i zeroops-redis redis-cli --raw KEYS 'service_state:*' | tr '\n' ' ') 2>/dev/null || true
 ```

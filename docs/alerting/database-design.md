@@ -13,7 +13,7 @@
 
 ## 数据表设计
 
-### 1) talert_issues（告警问题表）
+### 1) alert_issues（告警问题表）
 
 存储告警问题的主要信息。
 
@@ -23,7 +23,7 @@
 | state | enum(Closed, Open) | 问题状态 |
 | level | varchar(32) | 告警等级：如 P0/P1/Px |
 | alert_state | enum(Pending, Restored, AutoRestored, InProcessing) | 处理状态 |
-| title | varchar(255) | 告警标题 |
+| title | varchar(255) | 告警标题 
 | labels | json | 标签，格式：[{key, value}] |
 | alert_since | TIMESTAMP(6) | 告警发生时间 |
 | resolved_at | TIMESTAMP(6) | 告警结束时间 |
@@ -64,8 +64,6 @@
 | labels | text | labels 的 JSON 字符串表示（规范化后） |
 | old_threshold | numeric | 旧阈值（可空） |
 | new_threshold | numeric | 新阈值（可空） |
-| old_watch | interval | 旧观察窗口（可空） |
-| new_watch | interval | 新观察窗口（可空） |
 
 
 **索引建议：**

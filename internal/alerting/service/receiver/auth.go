@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/fox-gonic/fox"
+	"github.com/gin-gonic/gin"
 )
 
 var (
@@ -32,7 +32,7 @@ func authEnabled() bool {
 }
 
 // AuthMiddleware returns false if unauthorized and writes a 401 response.
-func AuthMiddleware(c *fox.Context) bool {
+func AuthMiddleware(c *gin.Context) bool {
 	if !authEnabled() {
 		return true
 	}

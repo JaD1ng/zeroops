@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"github.com/rs/zerolog/log"
 )
 
 // ExporterSync is an in-memory PromSync implementation that maintains threshold/watch values
@@ -47,6 +49,8 @@ func (e *ExporterSync) SyncMetaToPrometheus(ctx context.Context, m *AlertRuleMet
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	key := e.keyFor(m.AlertName, m.Labels)
+	// diagnostic: log rule and canonical key
+	log.Debug().Str("rule", m.AlertName).Str("labels_ckey", key).Float64("threshold", m.Threshold).Msg("promsync sync meta")
 	e.thresholds[key] = m.Threshold
 	return nil
 }

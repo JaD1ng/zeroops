@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fox-gonic/fox"
+	"github.com/gin-gonic/gin"
 	adb "github.com/qiniu/zeroops/internal/alerting/database"
 	"github.com/qiniu/zeroops/internal/config"
 	"github.com/redis/go-redis/v9"
@@ -21,13 +21,14 @@ type IssueAPI struct {
 
 // RegisterIssueRoutes registers issue query routes. If rdb is nil, a client is created from env.
 // db can be nil; when nil, comments will be empty.
-func RegisterIssueRoutes(router *fox.Engine, rdb *redis.Client, db *adb.Database) {
+func RegisterIssueRoutes(router *gin.Engine, rdb *redis.Client, db *adb.Database) {
 	if rdb == nil {
 		rdb = newRedisFromEnv()
 	}
 	api := &IssueAPI{R: rdb, DB: db}
 	router.GET("/v1/issues/:issueID", api.GetIssueByID)
 	router.GET("/v1/issues", api.ListIssues)
+	router.GET("/v1/changelog/alertrules", api.ListAlertRuleChangeLogs)
 }
 
 func newRedisFromEnv() *redis.Client { return nil }
@@ -70,7 +71,7 @@ type comment struct {
 	Content   string `json:"content"`
 }
 
-func (api *IssueAPI) GetIssueByID(c *fox.Context) {
+func (api *IssueAPI) GetIssueByID(c *gin.Context) {
 	issueID := c.Param("issueID")
 	if issueID == "" {
 		c.JSON(http.StatusBadRequest, map[string]any{"error": map[string]any{"code": "INVALID_PARAMETER", "message": "missing issueID"}})
@@ -162,7 +163,7 @@ type issueListItem struct {
 	AlertSince string    `json:"alertSince"`
 }
 
-func (api *IssueAPI) ListIssues(c *fox.Context) {
+func (api *IssueAPI) ListIssues(c *gin.Context) {
 	start := strings.TrimSpace(c.Query("start"))
 	limitStr := strings.TrimSpace(c.Query("limit"))
 	if limitStr == "" {
@@ -256,4 +257,139 @@ func (api *IssueAPI) ListIssues(c *fox.Context) {
 		resp.Next = strconv.FormatUint(nextCursor, 10)
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+// ===== Alert Rule ChangeLog =====
+
+type alertRuleChangeValue struct {
+	Name string `json:"name"`
+	Old  string `json:"old"`
+	New  string `json:"new"`
+}
+
+type alertRuleChangeItem struct {
+	Name     string                 `json:"name"`
+	EditTime string                 `json:"editTime"`
+	Scope    string                 `json:"scope"`
+	Values   []alertRuleChangeValue `json:"values"`
+	Reason   string                 `json:"reason"`
+}
+
+type alertRuleChangeListResponse struct {
+	Items []alertRuleChangeItem `json:"items"`
+	Next  string                `json:"next,omitempty"`
+}
+
+// ListAlertRuleChangeLogs implements GET /v1/changelog/alertrules?start=...&limit=...
+func (api *IssueAPI) ListAlertRuleChangeLogs(c *gin.Context) {
+	if api.DB == nil {
+		c.JSON(http.StatusInternalServerError, map[string]any{"error": map[string]any{"code": "INTERNAL_ERROR", "message": "database not configured"}})
+		return
+	}
+
+	start := strings.TrimSpace(c.Query("start"))
+	limitStr := strings.TrimSpace(c.Query("limit"))
+	if limitStr == "" {
+		c.JSON(http.StatusBadRequest, map[string]any{"error": map[string]any{"code": "INVALID_PARAMETER", "message": "limit is required"}})
+		return
+	}
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit < 1 || limit > 100 {
+		c.JSON(http.StatusBadRequest, map[string]any{"error": map[string]any{"code": "INVALID_PARAMETER", "message": "limit must be 1-100"}})
+		return
+	}
+
+	var (
+		q    string
+		args []any
+	)
+	if start == "" {
+		q = `
+SELECT alert_name, change_time, labels, old_threshold, new_threshold, change_type
+FROM alert_meta_change_logs
+WHERE change_type = 'Update'
+ORDER BY change_time DESC
+LIMIT $1`
+		args = append(args, limit)
+	} else {
+		if _, err := time.Parse(time.RFC3339, start); err != nil {
+			if _, err2 := time.Parse(time.RFC3339Nano, start); err2 != nil {
+				c.JSON(http.StatusBadRequest, map[string]any{"error": map[string]any{"code": "INVALID_PARAMETER", "message": "start must be ISO 8601 time"}})
+				return
+			}
+		}
+		q = `
+SELECT alert_name, change_time, labels, old_threshold, new_threshold, change_type
+FROM alert_meta_change_logs
+WHERE change_time <= $1 AND change_type = 'Update'
+ORDER BY change_time DESC
+LIMIT $2`
+		args = append(args, start, limit)
+	}
+
+	rows, err := api.DB.QueryContext(c.Request.Context(), q, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, map[string]any{"error": map[string]any{"code": "INTERNAL_ERROR", "message": err.Error()}})
+		return
+	}
+	defer rows.Close()
+
+	items := make([]alertRuleChangeItem, 0, limit)
+	var lastTime string
+	for rows.Next() {
+		var (
+			name       string
+			changeTime time.Time
+			labelsRaw  string
+			oldTh      *float64
+			newTh      *float64
+			changeType string
+		)
+		if err := rows.Scan(&name, &changeTime, &labelsRaw, &oldTh, &newTh, &changeType); err != nil {
+			continue
+		}
+		scope := ""
+		var lm map[string]any
+		if err := json.Unmarshal([]byte(labelsRaw), &lm); err == nil {
+			if svc, ok := lm["service"].(string); ok && svc != "" {
+				scope = "service:" + svc
+				if ver, ok := lm["service_version"].(string); ok && ver != "" {
+					scope = scope + "v" + ver
+				}
+			}
+		}
+
+		values := make([]alertRuleChangeValue, 0, 2)
+		if oldTh != nil || newTh != nil {
+			values = append(values, alertRuleChangeValue{
+				Name: "threshold",
+				Old:  floatToString(oldTh),
+				New:  floatToString(newTh),
+			})
+		}
+
+		item := alertRuleChangeItem{
+			Name:     name,
+			EditTime: changeTime.UTC().Format(time.RFC3339),
+			Scope:    scope,
+			Values:   values,
+			Reason:   "检测到异常且未发生告警，降低阈值以尽早发现问题",
+		}
+		items = append(items, item)
+		lastTime = item.EditTime
+	}
+
+	resp := alertRuleChangeListResponse{Items: items}
+	if lastTime != "" {
+		resp.Next = lastTime
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+func floatToString(p *float64) string {
+	if p == nil {
+		return ""
+	}
+	s := strconv.FormatFloat(*p, 'f', -1, 64)
+	return s
 }

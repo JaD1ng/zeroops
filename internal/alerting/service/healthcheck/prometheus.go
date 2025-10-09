@@ -17,17 +17,17 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// PrometheusConfig holds configuration for Prometheus client
-type PrometheusConfig struct {
+// AnomalyDetectConfig holds configuration for Prometheus client
+type AnomalyDetectConfig struct {
 	BaseURL           string
 	QueryTimeout      time.Duration
 	AnomalyAPIURL     string
 	AnomalyAPITimeout time.Duration
 }
 
-// NewPrometheusConfigFromEnv creates PrometheusConfig from environment variables
-func NewPrometheusConfigFromEnv() *PrometheusConfig {
-	return &PrometheusConfig{
+// NewAnomalyDetectConfigFromEnv creates PrometheusConfig from environment variables
+func NewAnomalyDetectConfigFromEnv() *AnomalyDetectConfig {
+	return &AnomalyDetectConfig{
 		BaseURL:           getEnvOrDefault("PROMETHEUS_URL", "http://localhost:9090"),
 		QueryTimeout:      getDurationFromEnv("PROMETHEUS_QUERY_TIMEOUT", 30*time.Second),
 		AnomalyAPIURL:     getEnvOrDefault("ANOMALY_DETECTION_API_URL", "http://localhost:8081/api/v1/anomaly/detect"),
@@ -36,13 +36,13 @@ func NewPrometheusConfigFromEnv() *PrometheusConfig {
 }
 
 // NewPrometheusConfigFromApp converts app config to runtime PrometheusConfig
-func NewPrometheusConfigFromApp(c *config.PrometheusConfig) *PrometheusConfig {
+func NewPrometheusConfigFromApp(c *config.PrometheusConfig) *AnomalyDetectConfig {
 	if c == nil {
-		return NewPrometheusConfigFromEnv()
+		return NewAnomalyDetectConfigFromEnv()
 	}
 	qt, _ := time.ParseDuration(getNonEmpty(c.QueryTimeout, "30s"))
 	at, _ := time.ParseDuration(getNonEmpty(c.AnomalyAPITimeout, "10s"))
-	return &PrometheusConfig{
+	return &AnomalyDetectConfig{
 		BaseURL:           getNonEmpty(c.URL, "http://localhost:9090"),
 		QueryTimeout:      qt,
 		AnomalyAPIURL:     getNonEmpty(c.AnomalyAPIURL, "http://localhost:8081/api/v1/anomaly/detect"),
@@ -50,15 +50,15 @@ func NewPrometheusConfigFromApp(c *config.PrometheusConfig) *PrometheusConfig {
 	}
 }
 
-// PrometheusClient handles communication with Prometheus
-type PrometheusClient struct {
-	config     *PrometheusConfig
+// AnomalyDetectClient handles communication with Prometheus
+type AnomalyDetectClient struct {
+	config     *AnomalyDetectConfig
 	httpClient *http.Client
 }
 
-// NewPrometheusClient creates a new Prometheus client
-func NewPrometheusClient(config *PrometheusConfig) *PrometheusClient {
-	return &PrometheusClient{
+// NewAnomalyDetectClient creates a new Prometheus client
+func NewAnomalyDetectClient(config *AnomalyDetectConfig) *AnomalyDetectClient {
+	return &AnomalyDetectClient{
 		config: config,
 		httpClient: &http.Client{
 			Timeout: config.QueryTimeout,
@@ -67,7 +67,7 @@ func NewPrometheusClient(config *PrometheusConfig) *PrometheusClient {
 }
 
 // QueryRange executes a Prometheus query_range request
-func (c *PrometheusClient) QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration) (*PrometheusResponse, error) {
+func (c *AnomalyDetectClient) QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration) (*PrometheusResponse, error) {
 	params := url.Values{}
 	params.Set("query", query)
 	params.Set("start", strconv.FormatInt(start.Unix(), 10))
@@ -105,7 +105,7 @@ func (c *PrometheusClient) QueryRange(ctx context.Context, query string, start, 
 }
 
 // DetectAnomalies calls the anomaly detection API for each time series individually
-func (c *PrometheusClient) DetectAnomalies(ctx context.Context, timeSeries []PrometheusTimeSeries, queries []PrometheusQuery) (*AnomalyDetectionResponse, error) {
+func (c *AnomalyDetectClient) DetectAnomalies(ctx context.Context, timeSeries []PrometheusTimeSeries, queries []PrometheusQuery) (*AnomalyDetectionResponse, error) {
 	var allAnomalies []Anomaly
 
 	// Process each time series individually
@@ -135,7 +135,7 @@ func (c *PrometheusClient) DetectAnomalies(ctx context.Context, timeSeries []Pro
 
 // detectAnomaliesForSingleTimeSeries calls the anomaly detection API for a single time series
 
-func (c *PrometheusClient) detectAnomaliesForSingleTimeSeries(ctx context.Context, timeSeries PrometheusTimeSeries, query *PrometheusQuery) ([]Anomaly, error) {
+func (c *AnomalyDetectClient) detectAnomaliesForSingleTimeSeries(ctx context.Context, timeSeries PrometheusTimeSeries, query *PrometheusQuery) ([]Anomaly, error) {
 	// Build request body with metadata and time series data in the new format
 	dataPoints := make([]map[string]interface{}, 0, len(timeSeries.Values))
 	for _, pair := range timeSeries.Values {

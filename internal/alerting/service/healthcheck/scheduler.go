@@ -1,13 +1,12 @@
 package healthcheck
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
-	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,11 +26,11 @@ type Deps struct {
 
 // PrometheusDeps holds dependencies for Prometheus anomaly detection task
 type PrometheusDeps struct {
-	DB               *adb.Database
-	PrometheusClient *PrometheusClient
-	Interval         time.Duration
-	QueryStep        time.Duration
-	QueryRange       time.Duration
+	DB                  *adb.Database
+	AnomalyDetectClient *AnomalyDetectClient
+	Interval            time.Duration
+	QueryStep           time.Duration
+	QueryRange          time.Duration
 	// ruleset API integration
 	RulesetBase    string
 	RulesetTimeout time.Duration
@@ -76,7 +75,7 @@ func StartScheduler(ctx context.Context, deps Deps) {
 // StartPrometheusScheduler starts the Prometheus anomaly detection scheduler
 func StartPrometheusScheduler(ctx context.Context, deps PrometheusDeps) {
 	if deps.Interval <= 0 {
-		deps.Interval = 6 * time.Hour // Default 6 hours
+		deps.Interval = 5 * time.Minute // Default 6 hours
 	}
 	if deps.QueryStep <= 0 {
 		deps.QueryStep = 1 * time.Minute // Default 1 minute step
@@ -274,7 +273,7 @@ func runPrometheusAnomalyDetection(ctx context.Context, deps PrometheusDeps) err
 	for _, query := range queries {
 		log.Debug().Str("query", query.Expr).Interface("labels", query.Labels).Msg("executing promql")
 
-		resp, err := deps.PrometheusClient.QueryRange(ctx, query.Expr, start, end, deps.QueryStep)
+		resp, err := deps.AnomalyDetectClient.QueryRange(ctx, query.Expr, start, end, deps.QueryStep)
 		if err != nil {
 			log.Error().Err(err).Str("query", query.Expr).Msg("Failed to execute PromQL query")
 			continue
@@ -285,8 +284,10 @@ func runPrometheusAnomalyDetection(ctx context.Context, deps PrometheusDeps) err
 			allQueries = append(allQueries, query)
 		}
 		allTimeSeries = append(allTimeSeries, resp.Data.Result...)
-		log.Debug().Int("series", len(resp.Data.Result)).Str("query", query.Expr).Msg("promql result series appended")
 
+		for _, ts := range resp.Data.Result {
+			log.Debug().Interface("metric", ts.Metric).Int("value", len(ts.Values)).Msg("promql result series appended")
+		}
 		// no file exports
 	}
 
@@ -313,18 +314,22 @@ func runPrometheusAnomalyDetection(ctx context.Context, deps PrometheusDeps) err
 			break
 		}
 		q := allQueries[i]
+		log.Debug().Any("q", q).Msg("per-series anomaly detection query")
 		// per-series anomaly detection
-		anomalies, derr := deps.PrometheusClient.detectAnomaliesForSingleTimeSeries(ctx, ts, &q)
+		anomalies, derr := deps.AnomalyDetectClient.detectAnomaliesForSingleTimeSeries(ctx, ts, &q)
 		if derr != nil {
 			log.Error().Err(derr).Msg("per-series anomaly detection failed")
 			continue
 		}
+		log.Debug().Any("anomalies", anomalies).Msg("per-series anomaly detection completed")
 		totalDetected += len(anomalies)
 
 		// filter by existing alert time ranges
 		filtered := FilterAnomaliesByAlertTimeRanges(anomalies, alertIssues)
+		log.Debug().Any("filtered", filtered).Msg("per-series anomaly detection filtered")
 		totalFiltered += len(filtered)
 		if len(filtered) == 0 {
+			log.Debug().Msg("no anomalies filtered")
 			continue
 		}
 
@@ -334,13 +339,16 @@ func runPrometheusAnomalyDetection(ctx context.Context, deps PrometheusDeps) err
 			log.Debug().Msg("skip threshold update due to missing service or alert_name")
 			continue
 		}
+		log.Debug().Str("alert_name", q.AlertName).Str("service", service).Msg("adjusting thresholds")
 		versionKey, version := detectVersionFromLabels(q.Labels)
+		log.Debug().Str("alert_name", q.AlertName).Str("service", service).Str("version_key", versionKey).Str("version", version).Msg("detect version from labels")
 		if version == "" {
 			log.Debug().Str("alert_name", q.AlertName).Str("service", service).Msg("skip update: version is empty in labels")
 			continue
 		}
 
 		baseTh, ok, terr := fetchExactThreshold(ctx, deps.DB, q.AlertName, service, versionKey, version)
+		log.Debug().Str("alert_name", q.AlertName).Str("service", service).Str("version", version).Float64("base_threshold", baseTh).Bool("ok", ok).Err(terr).Msg("fetch exact threshold")
 		if terr != nil {
 			log.Error().Err(terr).Str("alert_name", q.AlertName).Str("service", service).Str("version", version).Msg("fetch exact threshold failed")
 			continue
@@ -353,6 +361,7 @@ func runPrometheusAnomalyDetection(ctx context.Context, deps PrometheusDeps) err
 
 		// fetch all metas for this service (across versions)
 		metas, ferr := fetchMetasForService(ctx, deps.DB, q.AlertName, service)
+		log.Debug().Str("alert_name", q.AlertName).Str("service", service).Any("metas", metas).Msg("fetch metas for service")
 		if ferr != nil {
 			log.Error().Err(ferr).Str("alert_name", q.AlertName).Str("service", service).Msg("fetch metas failed")
 			continue
@@ -372,38 +381,59 @@ func runPrometheusAnomalyDetection(ctx context.Context, deps PrometheusDeps) err
 		}, 0, 1)
 		targetMatched := false
 		for _, m := range metas {
-			isTarget := strings.Contains(m.LabelsJSON, fmt.Sprintf(`"%s":"%s"`, versionKey, version))
+			bServiceMatch := strings.Contains(m.LabelsJSON, service)
+			bVersionMatch := strings.Contains(m.LabelsJSON, version)
+			isTarget := bServiceMatch && bVersionMatch
+			log.Debug().Bool("bServiceMatch", bServiceMatch).Bool("bVersionMatch", bVersionMatch).Bool("isTarget", isTarget).Any("m.LabelsJSON", m.LabelsJSON)
+			compact := compactLabelsJSON(m.LabelsJSON)
+			log.Debug().Str("labels", compact).Str("labels_ckey", canonicalKeyFromLabelsJSON(compact)).Bool("is_target", isTarget).Msg("metas appended")
 			if isTarget {
 				targetMatched = true
-				updates = append(updates, ruleMetaUpdate{Labels: m.LabelsJSON, Threshold: newThreshold})
+				updates = append(updates, ruleMetaUpdate{Labels: compact, Threshold: newThreshold})
+				log.Debug().Str("labels", compact).Float64("1.threshold", m.Threshold).Float64("new_threshold", newThreshold).Msg("metas appended")
 				if math.Abs(m.Threshold-newThreshold) > eps {
 					changed = append(changed, struct {
 						LabelsJSON string
 						Old        float64
 						New        float64
-					}{LabelsJSON: m.LabelsJSON, Old: m.Threshold, New: newThreshold})
+					}{LabelsJSON: compact, Old: m.Threshold, New: newThreshold})
 				}
 			} else {
-				updates = append(updates, ruleMetaUpdate{Labels: m.LabelsJSON, Threshold: m.Threshold})
+				updates = append(updates, ruleMetaUpdate{Labels: compact, Threshold: m.Threshold})
+				log.Debug().Str("labels", compact).Float64("2.threshold", m.Threshold).Float64("new_threshold", newThreshold).Msg("metas appended")
 			}
+			log.Debug().Str("labels", compact).Float64("3.threshold", m.Threshold).Float64("new_threshold", newThreshold).Msg("metas appended")
 		}
 		if !targetMatched || len(changed) == 0 {
-			log.Debug().Str("alert_name", q.AlertName).Str("service", service).Str("version", version).Msg("no threshold change for exact version; skip")
+			log.Debug().Str("alert_name", q.AlertName).Str("service", service).Str("version", version).Bool("target_matched", targetMatched).Int("changed_count", len(changed)).Msg("no threshold change for exact version; skip")
 			continue
 		}
 
 		if rulesetBase != "" {
+			log.Debug().Str("alert_name", q.AlertName).Str("rulesetBase", rulesetBase).Any("meta", updates).Msg("ruleset meta PUT")
+			// extra diagnostics: log labels and canonical keys for each meta before PUT
+			for idx, u := range updates {
+				log.Debug().Int("meta_index", idx).
+					Str("labels", u.Labels).
+					Str("labels_ckey", canonicalKeyFromLabelsJSON(u.Labels)).
+					Float64("threshold", u.Threshold).
+					Msg("ruleset meta PUT item")
+			}
 			if err := putRuleMetas(ctx, httpClient, rulesetBase, q.AlertName, updates); err != nil {
 				log.Error().Err(err).Str("alert_name", q.AlertName).Str("service", service).Msg("ruleset meta PUT failed")
 			} else {
 				log.Info().Str("alert_name", q.AlertName).Str("service", service).Int("meta_count", len(updates)).Msg("ruleset meta updated")
-				// Log change records only after successful external update, only for changed metas
+				// Persist changes into DB and log change records, only for changed metas
 				for _, c := range changed {
-					_ = insertMetaChangeLog(ctx, deps.DB, "Update", q.AlertName, c.LabelsJSON, c.Old, c.New)
+					if err := updateMetaThreshold(ctx, deps.DB, q.AlertName, c.LabelsJSON, c.New); err != nil {
+						log.Error().Err(err).Str("alert_name", q.AlertName).Str("labels", c.LabelsJSON).Msg("update alert_rule_metas threshold failed")
+					} else {
+						_ = insertMetaChangeLog(ctx, deps.DB, "Update", q.AlertName, c.LabelsJSON, c.Old, c.New)
+					}
 				}
 			}
 		} else {
-			log.Warn().Msg("RULESET_API_BASE not set; skip PUT /v1/alert-rule-metas/{rule_name}")
+			log.Warn().Msg("RULESET_API_BASE not set; skip PUT /v1/alert-rules-meta/{rule_name}")
 		}
 	}
 
@@ -468,9 +498,12 @@ func fetchExactThreshold(ctx context.Context, db *adb.Database, alertName, servi
 // detectVersionFromLabels tries common keys for version and returns (key, value)
 func detectVersionFromLabels(labels map[string]string) (string, string) {
 	if v := labels["service_version"]; v != "" {
+		log.Debug().Str("labels", fmt.Sprintf("%v", labels)).Str("service_version", v).Msg("detect version from labels")
 		return "service_version", v
 	}
+
 	if v := labels["version"]; v != "" {
+		log.Debug().Str("labels", fmt.Sprintf("%v", labels)).Str("version", v).Msg("detect version from labels")
 		return "version", v
 	}
 	return "", ""
@@ -486,28 +519,29 @@ type ruleMetaPutReq struct {
 	Metas    []ruleMetaUpdate `json:"metas"`
 }
 
-// putRuleMetas calls PUT /v1/alert-rule-metas/{rule_name}
-func putRuleMetas(ctx context.Context, client *http.Client, base, ruleName string, metas []ruleMetaUpdate) error {
-	if client == nil {
-		client = http.DefaultClient
-	}
-	endpoint := strings.TrimSuffix(base, "/") + "/v1/alert-rule-metas/" + url.PathEscape(ruleName)
-	body, _ := json.Marshal(ruleMetaPutReq{RuleName: ruleName, Metas: metas})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("ruleset api status %d", resp.StatusCode)
-	}
-	return nil
-}
+// // putRuleMetas calls PUT /v1/alert-rules-meta/{rule_name}
+// func putRuleMetas(ctx context.Context, client *http.Client, base, ruleName string, metas []ruleMetaUpdate) error {
+// 	if client == nil {
+// 		client = http.DefaultClient
+// 	}
+// 	endpoint := strings.TrimSuffix(base, "/") + "/v1/alert-rules-meta/" + url.PathEscape(ruleName)
+// 	log.Debug().Str("endpoint", endpoint).Str("rule_name", ruleName).Int("meta_count", len(metas)).Msg("prepared ruleset meta PUT endpoint")
+// 	body, _ := json.Marshal(ruleMetaPutReq{RuleName: ruleName, Metas: metas})
+// 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, bytes.NewReader(body))
+// 	if err != nil {
+// 		return err
+// 	}
+// 	req.Header.Set("Content-Type", "application/json")
+// 	resp, err := client.Do(req)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	defer resp.Body.Close()
+// 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+// 		return fmt.Errorf("ruleset api status %d", resp.StatusCode)
+// 	}
+// 	return nil
+// }
 
 // insertMetaChangeLog writes a change record to alert_meta_change_logs (best-effort)
 func insertMetaChangeLog(ctx context.Context, db *adb.Database, changeType, alertName, labels string, oldTh, newTh float64) error {
@@ -522,4 +556,76 @@ func insertMetaChangeLog(ctx context.Context, db *adb.Database, changeType, aler
 		return err
 	}
 	return nil
+}
+
+// updateMetaThreshold updates alert_rule_metas.threshold for a specific rule+labels
+func updateMetaThreshold(ctx context.Context, db *adb.Database, alertName, labelsJSON string, newThreshold float64) error {
+	if db == nil {
+		return nil
+	}
+	const q = `UPDATE alert_rule_metas SET threshold=$1, updated_at=NOW() WHERE alert_name=$2 AND labels=$3::jsonb`
+	if _, err := db.ExecContext(ctx, q, newThreshold, alertName, labelsJSON); err != nil {
+		return err
+	}
+	return nil
+}
+
+// canonicalKeyFromLabelsJSON parses labels JSON and returns a stable key "k=v|..."
+func canonicalKeyFromLabelsJSON(s string) string {
+	// try map form {"k":"v"}
+	m := map[string]string{}
+	if err := json.Unmarshal([]byte(s), &m); err == nil && len(m) > 0 {
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, strings.ToLower(strings.TrimSpace(k)))
+		}
+		sort.Strings(keys)
+		var b strings.Builder
+		for i, k := range keys {
+			if i > 0 {
+				b.WriteByte('|')
+			}
+			b.WriteString(k)
+			b.WriteByte('=')
+			b.WriteString(strings.TrimSpace(m[k]))
+		}
+		return b.String()
+	}
+	// try array form [{"key":"k","value":"v"}]
+	var arr []struct{ Key, Value string }
+	if err := json.Unmarshal([]byte(s), &arr); err == nil && len(arr) > 0 {
+		m2 := make(map[string]string, len(arr))
+		for _, kv := range arr {
+			m2[strings.ToLower(strings.TrimSpace(kv.Key))] = strings.TrimSpace(kv.Value)
+		}
+		keys := make([]string, 0, len(m2))
+		for k := range m2 {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		var b strings.Builder
+		for i, k := range keys {
+			if i > 0 {
+				b.WriteByte('|')
+			}
+			b.WriteString(k)
+			b.WriteByte('=')
+			b.WriteString(m2[k])
+		}
+		return b.String()
+	}
+	return "{}"
+}
+
+// compactLabelsJSON removes spaces from a JSON object string deterministically.
+func compactLabelsJSON(s string) string {
+	var m map[string]string
+	if err := json.Unmarshal([]byte(s), &m); err == nil && len(m) > 0 {
+		b, err := json.Marshal(m)
+		if err == nil {
+			return string(b)
+		}
+	}
+	// fallback keep original
+	return s
 }

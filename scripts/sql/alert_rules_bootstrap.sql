@@ -6,6 +6,7 @@ BEGIN;
 -- Drop tables if exist (order matters due to FK)
 DROP TABLE IF EXISTS alert_rule_metas CASCADE;
 DROP TABLE IF EXISTS alert_rules CASCADE;
+DROP TABLE IF EXISTS alert_meta_change_logs CASCADE;
 
 -- Create alert_rules
 CREATE TABLE alert_rules (
@@ -25,6 +26,21 @@ CREATE TABLE alert_rule_metas (
     updated_at   timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (alert_name, labels)
 );
+
+-- Create alert_meta_change_logs
+CREATE TABLE alert_meta_change_logs (
+    id              varchar(64) PRIMARY KEY,
+    change_type     varchar(16) NOT NULL CHECK (change_type IN ('Create', 'Update', 'Delete', 'Rollback')),
+    change_time     timestamptz NOT NULL DEFAULT now(),
+    alert_name      varchar(255) NOT NULL,
+    labels          text NOT NULL,
+    old_threshold   numeric,
+    new_threshold   numeric
+);
+
+-- Create indexes for alert_meta_change_logs
+CREATE INDEX idx_alert_meta_change_logs_change_time ON alert_meta_change_logs (change_time);
+CREATE INDEX idx_alert_meta_change_logs_alert_name_time ON alert_meta_change_logs (alert_name, change_time);
 
 -- Seed sample data per request
 INSERT INTO alert_rules(name, description, expr, op, severity, watch_time)

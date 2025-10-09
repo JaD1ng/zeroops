@@ -4,14 +4,14 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/fox-gonic/fox"
+	"github.com/gin-gonic/gin"
 	"github.com/qiniu/zeroops/internal/service_manager/model"
 	"github.com/qiniu/zeroops/internal/service_manager/service"
 	"github.com/rs/zerolog/log"
 )
 
 // setupDeployRouters 设置部署管理相关路由
-func (api *Api) setupDeployRouters(router *fox.Engine) {
+func (api *Api) setupDeployRouters(router *gin.Engine) {
 	// 部署任务基本操作
 	router.POST("/v1/deployments", api.CreateDeployment)
 	router.GET("/v1/deployments", api.GetDeployments)
@@ -28,7 +28,7 @@ func (api *Api) setupDeployRouters(router *fox.Engine) {
 // ===== 部署管理相关API =====
 
 // CreateDeployment 创建发布任务（POST /v1/deployments）
-func (api *Api) CreateDeployment(c *fox.Context) {
+func (api *Api) CreateDeployment(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	var req model.CreateDeploymentRequest
@@ -82,7 +82,7 @@ func (api *Api) CreateDeployment(c *fox.Context) {
 }
 
 // GetDeploymentByID 获取发布任务详情（GET /v1/deployments/:deployID）
-func (api *Api) GetDeploymentByID(c *fox.Context) {
+func (api *Api) GetDeploymentByID(c *gin.Context) {
 	ctx := c.Request.Context()
 	deployID := c.Param("deployID")
 
@@ -115,7 +115,7 @@ func (api *Api) GetDeploymentByID(c *fox.Context) {
 }
 
 // GetDeployments 获取发布任务列表（GET /v1/deployments）
-func (api *Api) GetDeployments(c *fox.Context) {
+func (api *Api) GetDeployments(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	query := &model.DeploymentQuery{
@@ -146,7 +146,7 @@ func (api *Api) GetDeployments(c *fox.Context) {
 }
 
 // UpdateDeployment 修改发布任务（POST /v1/deployments/:deployID）
-func (api *Api) UpdateDeployment(c *fox.Context) {
+func (api *Api) UpdateDeployment(c *gin.Context) {
 	ctx := c.Request.Context()
 	deployID := c.Param("deployID")
 
@@ -197,7 +197,7 @@ func (api *Api) UpdateDeployment(c *fox.Context) {
 }
 
 // DeleteDeployment 删除发布任务（DELETE /v1/deployments/:deployID）
-func (api *Api) DeleteDeployment(c *fox.Context) {
+func (api *Api) DeleteDeployment(c *gin.Context) {
 	ctx := c.Request.Context()
 	deployID := c.Param("deployID")
 
@@ -239,7 +239,7 @@ func (api *Api) DeleteDeployment(c *fox.Context) {
 }
 
 // PauseDeployment 暂停发布任务（POST /v1/deployments/:deployID/pause）
-func (api *Api) PauseDeployment(c *fox.Context) {
+func (api *Api) PauseDeployment(c *gin.Context) {
 	ctx := c.Request.Context()
 	deployID := c.Param("deployID")
 
@@ -281,7 +281,7 @@ func (api *Api) PauseDeployment(c *fox.Context) {
 }
 
 // ContinueDeployment 继续发布任务（POST /v1/deployments/:deployID/continue）
-func (api *Api) ContinueDeployment(c *fox.Context) {
+func (api *Api) ContinueDeployment(c *gin.Context) {
 	ctx := c.Request.Context()
 	deployID := c.Param("deployID")
 
@@ -323,7 +323,7 @@ func (api *Api) ContinueDeployment(c *fox.Context) {
 }
 
 // RollbackDeployment 回滚发布任务（POST /v1/deployments/:deployID/rollback）
-func (api *Api) RollbackDeployment(c *fox.Context) {
+func (api *Api) RollbackDeployment(c *gin.Context) {
 	ctx := c.Request.Context()
 	deployID := c.Param("deployID")
 
