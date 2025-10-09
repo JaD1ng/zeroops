@@ -3,8 +3,6 @@ package receiver
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -32,19 +30,10 @@ type Cache struct{ R *redis.Client }
 
 // NewCacheFromEnv constructs a Redis client using environment variables.
 // REDIS_ADDR, REDIS_PASSWORD, REDIS_DB
-func NewCacheFromEnv() *Cache {
-	db, _ := strconv.Atoi(os.Getenv("REDIS_DB"))
-	addr := os.Getenv("REDIS_ADDR")
-	if strings.TrimSpace(addr) == "" {
-		addr = "localhost:6379"
-	}
-	c := redis.NewClient(&redis.Options{
-		Addr:     addr,
-		Password: os.Getenv("REDIS_PASSWORD"),
-		DB:       db,
-	})
-	return &Cache{R: c}
-}
+func NewCacheFromEnv() *Cache { return nil }
+
+// NewCache constructs a Cache from provided redis client
+func NewCache(r *redis.Client) *Cache { return &Cache{R: r} }
 
 // WriteIssue writes the alert issue into Redis as a JSON blob and updates a few indices.
 // Best-effort: failure should not block the main flow.

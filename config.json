@@ -1,0 +1,54 @@
+{
+  "server": {
+    "bindAddr": "0.0.0.0:8080"
+  },
+  "logging": {
+    "level": "debug"
+  },
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "user": "postgres",
+    "password": "postgres",
+    "dbname": "zeroops",
+    "sslmode": "disable"
+  },
+  "redis": {
+    "addr": "localhost:6379",
+    "password": "",
+    "db": 0
+  },
+  "alerting": {
+    "healthcheck": {
+      "interval": "10s",
+      "batch": 200,
+      "workers": 1,
+      "alertChanSize": 1024
+    },
+    "remediation": {
+      "rollbackSleep": "30s",
+      "rollbackURL": "http://deploy-system/rollback/%s"
+    },
+    "prometheus": {
+      "url": "http://localhost:9090",
+      "queryTimeout": "30s",
+      "anomalyAPIUrl": "http://localhost:8081/api/v1/anomaly/detect",
+      "anomalyAPITimeout": "10s",
+      "schedulerInterval": "6h",
+      "queryStep": "1m",
+      "queryRange": "6h"
+    },
+    "ruleset": {
+      "configFile": "configs/alerting/rules.json",
+      "apiBase": "",
+      "apiTimeout": "10s"
+    },
+    "receiver": {
+      "basicUser": "alert",
+      "basicPass": "REDACTED",
+      "bearer": ""
+    }
+  }
+}
+
+

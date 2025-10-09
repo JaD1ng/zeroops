@@ -1,7 +1,7 @@
 package receiver
 
-import "github.com/fox-gonic/fox"
+import "github.com/gin-gonic/gin"
 
-func RegisterReceiverRoutes(r *fox.Engine, h *Handler) {
+func RegisterReceiverRoutes(r *gin.Engine, h *Handler) {
 	r.POST("/v1/integrations/alertmanager/webhook", h.AlertmanagerWebhook)
 }

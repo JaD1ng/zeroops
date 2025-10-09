@@ -2,14 +2,13 @@
 
 ## 概述
 
-本文档为最新数据库设计，总计包含 7 张表：
+本文档为最新数据库设计，总计包含 6 张表：
 
 - alert_issues
 - alert_issue_comments
-- metric_alert_changes
+- alert_meta_change_logs
 - alert_rules
-- service_alert_metas
-- service_metrics
+- alert_rule_metas
 - service_states
 
 ## 数据表设计
@@ -24,9 +23,10 @@
 | state | enum(Closed, Open) | 问题状态 |
 | level | varchar(32) | 告警等级：如 P0/P1/Px |
 | alert_state | enum(Pending, Restored, AutoRestored, InProcessing) | 处理状态 |
-| title | varchar(255) | 告警标题 |
+| title | varchar(255) | 告警标题 
 | labels | json | 标签，格式：[{key, value}] |
-| alert_since | TIMESTAMP(6) | 告警首次发生时间 |
+| alert_since | TIMESTAMP(6) | 告警发生时间 |
+| resolved_at | TIMESTAMP(6) | 告警结束时间 |
 
 **索引建议：**
 - PRIMARY KEY: `id`
@@ -51,16 +51,20 @@
 
 ---
 
-### 3) metric_alert_changes（指标告警规则变更记录表）
+### 3) alert_meta_change_logs（阈值变更记录表）
 
-用于追踪指标类告警规则或参数的变更历史。
+用于追踪规则阈值（threshold）与观察窗口（watch_time）的变更历史。
 
 | 字段名 | 类型 | 说明 |
 |--------|------|------|
-| id | varchar(64) PK | 变更记录 ID |
-| change_time | TIMESTAMP(6) | 变更时间 |
-| alert_name | varchar(255) | 告警名称/规则名 |
-| change_items | json | 变更项数组：[{key, old_value, new_value}] |
+| id | varchar(64) PK | 幂等/去重标识 |
+| change_type | varchar(16) | 变更类型：Create / Update / Delete / Rollback |
+| change_time | timestamptz | 变更时间 |
+| alert_name | varchar(255) | 规则名 |
+| labels | text | labels 的 JSON 字符串表示（规范化后） |
+| old_threshold | numeric | 旧阈值（可空） |
+| new_threshold | numeric | 新阈值（可空） |
+
 
 **索引建议：**
 - PRIMARY KEY: `id`
@@ -71,49 +75,40 @@
 
 ### 4) alert_rules（告警规则表）
 
-定义可复用的规则表达式，支持作用域绑定。
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| name | varchar(255) | 主键，告警规则名称 (示例：http_latency)|
+| description | text | 可读标题，可拼接渲染为可读的 title |
+| expr | text | 左侧业务指标表达式，（通常对应 PromQL 左侧的聚合,对应name业务实际的sql，如 sum(rate(http_request_duration{}[5m])) by (service, service_version)） |
+| op | varchar(4) | 阈值比较方式（枚举：>, <, =, !=） |
+| severity | varchar(32) | 告警等级，通常进入告警的 labels.severity |
+| watch_time | interval | 持续时长（映射 Prometheus rule 的 for:） |
+
+**约束建议：**
+- CHECK 约束：`op IN ('>', '<', '=', '!=')`
+- UNIQUE: `name`
+
+⸻
+
+### 5) alert_rule_metas（规则阈值元信息表）
 
 | 字段名 | 类型 | 说明 |
 |--------|------|------|
-| id | varchar(255) PK | 规则 ID（可与 K8s 资源 ID 对应或做映射） |
-| name | varchar(255) | 规则名称，表达式可读的名称 |
-| scopes | varchar(255) | 作用域，例："services:svc1,svc2" |
-| expr | text | 规则表达式（可含占位符） |
+| alert_name | varchar(255) | 关联 `alert_rules.name` |
+| labels | jsonb | 适用标签（示例：{"service":"s3","service_version":"1.0.0"}）；为空 `{}` 表示全局 |
+| threshold | numeric | 阈值（会被渲染成特定规则的 threshold metric 数值） |
 
-**索引建议：**
-- PRIMARY KEY: `id`
-- INDEX: `(name)`
-- INDEX: `(scopes)`
 
----
+**约束与索引建议：**
+- FOREIGN KEY: `(alert_name)` REFERENCES `alert_rules(name)` ON DELETE CASCADE
+- UNIQUE: `(alert_name, labels)`
+- GIN INDEX: `labels`（`CREATE INDEX idx_metas_labels_gin ON alert_rule_metas USING gin(labels);`）
 
-### 5) service_alert_metas（服务告警元数据表）
+⸻
 
-按服务维度存放参数化配置，用于渲染具体规则。
-
-| 字段名 | 类型 | 说明 |
-|--------|------|------|
-| service | varchar(255) | 服务名 |
-| key | varchar(255) | 参数名（如 `apitime_threshold`） |
-| value | varchar(255) | 参数值（如 `50`） |
-
-**索引建议：**
-- PRIMARY KEY: `(service, key)`
-- INDEX: `(service)`
-
----
-
-### 6) service_metrics（服务指标清单表）
-
-记录服务所关注的指标清单（可用于 UI 侧展示或校验）。
-
-| 字段名 | 类型 | 说明 |
-|--------|------|------|
-| service | varchar(255) PK | 服务名 |
-| metrics | json | 指标名数组：["metric1", "metric2", ...] |
-
-**索引建议：**
-- PRIMARY KEY: `service`
+说明：
+- labels 建议用 jsonb，方便在 Postgres 中做索引和查询。
+- labels 的键名与值格式应在应用层规范化（排序/小写/去空值）以确保唯一性和可查询性一致。
 
 ---
 
@@ -140,21 +135,18 @@ erDiagram
     alert_issues ||--o{ alert_issue_comments : "has comments"
 
     alert_rules {
-        varchar id PK
-        varchar name
-        varchar scopes
+        varchar name PK
+        text description
         text expr
+        varchar op
+        varchar severity
     }
 
-    service_alert_metas {
-        varchar service PK
-        varchar key PK
-        varchar value
-    }
-
-    service_metrics {
-        varchar service PK
-        json metrics
+    alert_rule_metas {
+        varchar alert_name FK
+        jsonb labels
+        numeric threshold
+        interval watch_time
     }
 
     service_states {
@@ -184,14 +176,13 @@ erDiagram
         text content
     }
 
-    %% 通过 service 逻辑关联
-    service_alert_metas ||..|| service_metrics : "by service"
-    service_states ||..|| service_alert_metas : "by service"
+    %% 通过 service 等标签在应用层逻辑关联
+    alert_rule_metas ||..|| alert_rules : "by alert_name"
+    service_states ||..|| alert_rule_metas : "by service/version labels"
 ```
 
 ## 数据流转
 
-1. 以 `alert_rules` 为模版，结合 `service_alert_metas` 渲染出面向具体服务的规则。
-2. 指标或规则参数发生调整时，记录到 `metric_alert_changes`。
+1. 以 `alert_rules` 为模版，结合 `alert_rule_metas` 渲染出面向具体服务/版本等的规则（labels 可为空 `{}` 表示全局默认，或包含如 service/version 等标签）。
+2. 指标或规则参数发生调整时，记录到 `alert_meta_change_logs`。
 3. 规则触发创建 `alert_issues`；处理过程中的动作写入 `alert_issue_comments`。
-4. 面向服务的整体健康态以 `service_states` 记录和推进（new → analyzing → processing → resolved）。
