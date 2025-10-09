@@ -90,6 +90,25 @@ import ChangeCard from '@/components/ChangeCard.vue'
 import AlarmChangeCard from '@/components/AlarmChangeCard.vue'
 import { ArrowLeft, Loading } from '@element-plus/icons-vue'
 
+interface AlertRuleChangeValue {
+  name: string
+  old: string
+  new: string
+}
+
+interface AlertRuleChangeItem {
+  name: string
+  editTime: string
+  scope: string
+  values: AlertRuleChangeValue[]
+  reason: string
+}
+
+interface AlertRuleChangelogResponse {
+  items: AlertRuleChangeItem[]
+  next?: string
+}
+
 const appStore = useAppStore()
 
 const activeTab = ref('service')
@@ -155,13 +174,13 @@ const transformDeploymentChangelogToChangeItems = (changelogData: any[]): Change
 }
 
 // 数据转换函数：将告警规则变更记录API返回的数据转换为前端需要的格式
-const transformAlertRuleChangelogToAlarmChangeItems = (changelogData: any[]): AlarmChangeItem[] => {
+const transformAlertRuleChangelogToAlarmChangeItems = (changelogData: AlertRuleChangeItem[]): AlarmChangeItem[] => {
   return changelogData.map((item, index) => {
     // 从scope中提取服务名
     const serviceName = item.scope?.startsWith('service:') ? item.scope.slice('service:'.length) + '服务' : '全局服务'
     
     // 构建变更描述
-    const changeDescription = item.values.map(value => {
+  const changeDescription = item.values.map((value) => {
       return `${value.name}: ${value.old} -> ${value.new}`
     }).join(', ')
     
