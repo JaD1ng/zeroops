@@ -1,15 +1,15 @@
 package server
 
 import (
-    "context"
-    "fmt"
-    "mocks3/shared/observability"
-    "net/http"
-    "net"
-    "os"
-    "os/signal"
-    "syscall"
-    "time"
+	"context"
+	"fmt"
+	"mocks3/shared/observability"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"mocks3/shared/middleware/consul"
@@ -47,7 +47,8 @@ type ServiceBootstrap struct {
 	HTTPMiddleware *observability.HTTPMiddleware
 
 	// 错误注入
-	MetricInjector *error_injection.MetricInjector
+	MetricInjector  *error_injection.MetricInjector
+	LatencyInjector *error_injection.HTTPLatencyInjector
 
 	// Consul客户端
 	ConsulClient consul.ConsulClient
@@ -174,7 +175,7 @@ func (sb *ServiceBootstrap) setupObservability() error {
 
 // setupConsulRegistration 设置Consul服务注册
 func (sb *ServiceBootstrap) setupConsulRegistration() error {
-    ctx := context.Background()
+	ctx := context.Background()
 
 	// 检查配置是否支持Consul
 	consulConfig, ok := sb.Config.(ConsulServiceConfig)
@@ -191,23 +192,23 @@ func (sb *ServiceBootstrap) setupConsulRegistration() error {
 
 	sb.ConsulClient = consulClient
 
-    // 注册服务到Consul
-    // 优先使用可达的容器/主机实例IP地址进行注册，确保多实例下目标唯一
-    var registerAddress string
-    if sb.Config.GetHost() == "0.0.0.0" {
-        // 允许通过环境变量覆盖对外公布地址
-        if envAddr := os.Getenv("ADVERTISE_ADDR"); envAddr != "" {
-            registerAddress = envAddr
-        } else {
-            ip, err := detectAdvertiseAddr()
-            if err != nil {
-                return fmt.Errorf("failed to detect advertise address: %w", err)
-            }
-            registerAddress = ip
-        }
-    } else {
-        registerAddress = sb.Config.GetHost()
-    }
+	// 注册服务到Consul
+	// 优先使用可达的容器/主机实例IP地址进行注册，确保多实例下目标唯一
+	var registerAddress string
+	if sb.Config.GetHost() == "0.0.0.0" {
+		// 允许通过环境变量覆盖对外公布地址
+		if envAddr := os.Getenv("ADVERTISE_ADDR"); envAddr != "" {
+			registerAddress = envAddr
+		} else {
+			ip, err := detectAdvertiseAddr()
+			if err != nil {
+				return fmt.Errorf("failed to detect advertise address: %w", err)
+			}
+			registerAddress = ip
+		}
+	} else {
+		registerAddress = sb.Config.GetHost()
+	}
 
 	err = consul.RegisterService(ctx, consulClient,
 		sb.Config.GetServiceName(),
@@ -217,79 +218,83 @@ func (sb *ServiceBootstrap) setupConsulRegistration() error {
 		return fmt.Errorf("failed to register service with Consul: %w", err)
 	}
 
-    sb.Logger.Info(ctx, "Service registered with Consul successfully",
-        observability.String("consul_addr", consulConfig.GetConsulAddress()),
-        observability.String("service_name", sb.Config.GetServiceName()),
-        observability.String("register_address", registerAddress))
+	sb.Logger.Info(ctx, "Service registered with Consul successfully",
+		observability.String("consul_addr", consulConfig.GetConsulAddress()),
+		observability.String("service_name", sb.Config.GetServiceName()),
+		observability.String("register_address", registerAddress))
 
-    return nil
+	return nil
 }
 
 // detectAdvertiseAddr 自动探测一个非回环的IPv4地址，优先选择常见容器网卡
 func detectAdvertiseAddr() (string, error) {
-    // 优先尝试常见的容器网卡名称
-    preferredIfaces := []string{"eth0", "ens3", "ens4", "en0"}
-    for _, name := range preferredIfaces {
-        ifi, err := net.InterfaceByName(name)
-        if err == nil && (ifi.Flags&net.FlagUp) != 0 {
-            addrs, err := ifi.Addrs()
-            if err == nil {
-                if ip := firstIPv4(addrs); ip != "" {
-                    return ip, nil
-                }
-            }
-        }
-    }
+	// 优先尝试常见的容器网卡名称
+	preferredIfaces := []string{"eth0", "ens3", "ens4", "en0"}
+	for _, name := range preferredIfaces {
+		ifi, err := net.InterfaceByName(name)
+		if err == nil && (ifi.Flags&net.FlagUp) != 0 {
+			addrs, err := ifi.Addrs()
+			if err == nil {
+				if ip := firstIPv4(addrs); ip != "" {
+					return ip, nil
+				}
+			}
+		}
+	}
 
-    // 回退：遍历所有网卡，取第一个非回环且Up的IPv4
-    ifaces, err := net.Interfaces()
-    if err != nil {
-        return "", err
-    }
-    for _, ifi := range ifaces {
-        if (ifi.Flags&net.FlagUp) == 0 || (ifi.Flags&net.FlagLoopback) != 0 {
-            continue
-        }
-        addrs, err := ifi.Addrs()
-        if err != nil {
-            continue
-        }
-        if ip := firstIPv4(addrs); ip != "" {
-            return ip, nil
-        }
-    }
-    return "", fmt.Errorf("no non-loopback IPv4 address found")
+	// 回退：遍历所有网卡，取第一个非回环且Up的IPv4
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", err
+	}
+	for _, ifi := range ifaces {
+		if (ifi.Flags&net.FlagUp) == 0 || (ifi.Flags&net.FlagLoopback) != 0 {
+			continue
+		}
+		addrs, err := ifi.Addrs()
+		if err != nil {
+			continue
+		}
+		if ip := firstIPv4(addrs); ip != "" {
+			return ip, nil
+		}
+	}
+	return "", fmt.Errorf("no non-loopback IPv4 address found")
 }
 
 func firstIPv4(addrs []net.Addr) string {
-    for _, a := range addrs {
-        var ip net.IP
-        switch v := a.(type) {
-        case *net.IPNet:
-            ip = v.IP
-        case *net.IPAddr:
-            ip = v.IP
-        }
-        if ip == nil {
-            continue
-        }
-        ip4 := ip.To4()
-        if ip4 == nil || ip4.IsLoopback() {
-            continue
-        }
-        return ip4.String()
-    }
-    return ""
+	for _, a := range addrs {
+		var ip net.IP
+		switch v := a.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		}
+		if ip == nil {
+			continue
+		}
+		ip4 := ip.To4()
+		if ip4 == nil || ip4.IsLoopback() {
+			continue
+		}
+		return ip4.String()
+	}
+	return ""
 }
 
 // setupErrorInjection 设置错误注入中间件
 func (sb *ServiceBootstrap) setupErrorInjection() error {
 	ctx := context.Background()
 
-	// 尝试从配置文件加载
+	// 获取服务版本（默认为 1.0.0）
+	serviceVersion := "1.0.0"
+
+	// 尝试从配置文件加载指标注入器
 	metricInjector, err := error_injection.NewMetricInjector(
 		sb.MetricInjectorConfigPath,
 		sb.Config.GetServiceName(),
+		serviceVersion,
 		sb.Logger,
 	)
 
@@ -300,6 +305,7 @@ func (sb *ServiceBootstrap) setupErrorInjection() error {
 		sb.MetricInjector = error_injection.NewMetricInjectorWithDefaults(
 			"http://mock-error-service:8085",
 			sb.Config.GetServiceName(),
+			serviceVersion,
 			sb.Logger,
 		)
 	} else {
@@ -307,7 +313,24 @@ func (sb *ServiceBootstrap) setupErrorInjection() error {
 	}
 
 	if sb.MetricInjector != nil {
-		sb.Logger.Info(ctx, "Metric injector initialized successfully")
+		sb.Logger.Info(ctx, "Metric injector initialized successfully",
+			observability.String("service_version", serviceVersion))
+	}
+
+	// 创建HTTP延迟注入器
+	sb.LatencyInjector = error_injection.NewHTTPLatencyInjector(
+		"http://mock-error-service:8085",
+		sb.Config.GetServiceName(),
+		serviceVersion,
+		sb.Logger,
+	)
+
+	// 将延迟注入器连接到HTTP中间件
+	if sb.HTTPMiddleware != nil && sb.LatencyInjector != nil {
+		sb.HTTPMiddleware.SetLatencyInjector(sb.LatencyInjector)
+		sb.Logger.Info(ctx, "HTTP latency injector connected to middleware",
+			observability.String("service", sb.Config.GetServiceName()),
+			observability.String("version", serviceVersion))
 	}
 
 	return nil
@@ -405,6 +428,12 @@ func (sb *ServiceBootstrap) waitForShutdown(server *http.Server) {
 	if sb.MetricInjector != nil {
 		sb.MetricInjector.Cleanup()
 		sb.Logger.Info(ctx, "Metric injector cleaned up")
+	}
+
+	// 清理延迟注入器资源
+	if sb.LatencyInjector != nil {
+		sb.LatencyInjector.Cleanup()
+		sb.Logger.Info(ctx, "Latency injector cleaned up")
 	}
 
 	// 关闭HTTP服务器

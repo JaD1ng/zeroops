@@ -84,10 +84,14 @@ services:
     volumes:
       - prometheus-data:/prometheus
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:rw
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'  # 启用管理API以支持配置重载
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # 允许容器访问宿主机
     restart: unless-stopped
 
   # Grafana - 可视化

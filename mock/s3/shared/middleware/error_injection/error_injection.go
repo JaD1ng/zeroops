@@ -1,16 +1,16 @@
 package error_injection
 
 import (
-    "context"
-    "fmt"
-    "mocks3/shared/client"
-    "mocks3/shared/models"
-    "mocks3/shared/observability"
-    "mocks3/shared/utils"
-    "net/http"
-    "strconv"
-    "sync"
-    "time"
+	"context"
+	"fmt"
+	"mocks3/shared/client"
+	"mocks3/shared/models"
+	"mocks3/shared/observability"
+	"mocks3/shared/utils"
+	"net/http"
+	"strconv"
+	"sync"
+	"time"
 )
 
 // MetricInjectorConfig 指标异常注入器配置
@@ -34,6 +34,7 @@ type CacheConfig struct {
 type MetricInjector struct {
 	mockErrorClient *client.BaseHTTPClient
 	serviceName     string
+	serviceVersion  string // 添加服务版本字段
 	logger          *observability.Logger
 
 	// 缓存
@@ -56,7 +57,7 @@ type CachedAnomaly struct {
 }
 
 // NewMetricInjector 从YAML配置创建指标异常注入器
-func NewMetricInjector(configPath string, serviceName string, logger *observability.Logger) (*MetricInjector, error) {
+func NewMetricInjector(configPath string, serviceName string, serviceVersion string, logger *observability.Logger) (*MetricInjector, error) {
 	// 加载配置文件
 	var config MetricInjectorConfig
 	if err := utils.LoadConfig(configPath, &config); err != nil {
@@ -84,6 +85,7 @@ func NewMetricInjector(configPath string, serviceName string, logger *observabil
 	injector := &MetricInjector{
 		mockErrorClient: client,
 		serviceName:     serviceName,
+		serviceVersion:  serviceVersion,
 		logger:          logger,
 		cache:           make(map[string]*CachedAnomaly),
 		cacheTTL:        config.Cache.TTL,
@@ -102,12 +104,13 @@ func NewMetricInjector(configPath string, serviceName string, logger *observabil
 }
 
 // NewMetricInjectorWithDefaults 使用默认配置创建指标异常注入器
-func NewMetricInjectorWithDefaults(mockErrorServiceURL string, serviceName string, logger *observability.Logger) *MetricInjector {
+func NewMetricInjectorWithDefaults(mockErrorServiceURL string, serviceName string, serviceVersion string, logger *observability.Logger) *MetricInjector {
 	client := client.NewBaseHTTPClient(mockErrorServiceURL, 5*time.Second, "metric-injector", logger)
 
 	injector := &MetricInjector{
 		mockErrorClient: client,
 		serviceName:     serviceName,
+		serviceVersion:  serviceVersion,
 		logger:          logger,
 		cache:           make(map[string]*CachedAnomaly),
 		cacheTTL:        30 * time.Second,
@@ -125,11 +128,9 @@ func NewMetricInjectorWithDefaults(mockErrorServiceURL string, serviceName strin
 
 // InjectMetricAnomaly 检查并注入指标异常
 func (mi *MetricInjector) InjectMetricAnomaly(ctx context.Context, metricName string, originalValue float64) float64 {
-    // 计算实例标识，用于实例级注入与缓存
-    instanceID := utils.GetInstanceID(mi.serviceName)
-
-    // 检查缓存（加入实例维度）
-    cacheKey := mi.serviceName + ":" + instanceID + ":" + metricName
+	// 使用服务版本作为注入维度，同一版本的所有实例共享相同的异常注入
+	// 检查缓存（基于服务版本）
+	cacheKey := mi.serviceName + ":" + mi.serviceVersion + ":" + metricName
 	mi.cacheMu.RLock()
 	if cached, exists := mi.cache[cacheKey]; exists && time.Now().Before(cached.ExpiresAt) {
 		mi.cacheMu.RUnlock()
@@ -140,20 +141,20 @@ func (mi *MetricInjector) InjectMetricAnomaly(ctx context.Context, metricName st
 	}
 	mi.cacheMu.RUnlock()
 
-	// 查询Mock Error Service获取异常规则
-    request := map[string]string{
-        "service":     mi.serviceName,
-        "metric_name": metricName,
-        "instance":    instanceID,
-    }
+	// 查询Mock Error Service获取异常规则（基于版本）
+	request := map[string]string{
+		"service":     mi.serviceName,
+		"version":     mi.serviceVersion,
+		"metric_name": metricName,
+	}
 
-    var response struct {
-        ShouldInject bool           `json:"should_inject"`
-        Service      string         `json:"service"`
-        MetricName   string         `json:"metric_name"`
-        Instance     string         `json:"instance"`
-        Anomaly      map[string]any `json:"anomaly,omitempty"`
-    }
+	var response struct {
+		ShouldInject bool           `json:"should_inject"`
+		Service      string         `json:"service"`
+		Version      string         `json:"version"`
+		MetricName   string         `json:"metric_name"`
+		Anomaly      map[string]any `json:"anomaly,omitempty"`
+	}
 
 	// 使用较短的超时时间避免影响正常指标收集
 	opts := client.RequestOptions{
