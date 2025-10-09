@@ -18,4 +18,5 @@ const (
 	StatusStop      DeployState = "stop"      // 暂停发布
 	StatusRollback  DeployState = "rollback"  // 已回滚
 	StatusCompleted DeployState = "completed" // 发布完成
+	StatusError     DeployState = "error"     // 发布失败
 )

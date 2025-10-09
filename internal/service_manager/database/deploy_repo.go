@@ -11,10 +11,7 @@ import (
 )
 
 // CreateDeployment 创建发布任务
-func (d *Database) CreateDeployment(ctx context.Context, req *model.CreateDeploymentRequest) (string, error) {
-	// 生成唯一ID
-	deployID := "deploy-" + strconv.FormatInt(time.Now().UnixNano(), 36)
-
+func (d *Database) CreateDeployment(ctx context.Context, req *model.CreateDeploymentRequest) error {
 	// 根据是否有计划时间决定初始状态
 	var initialStatus model.DeployState
 	if req.ScheduleTime == nil {
@@ -23,30 +20,40 @@ func (d *Database) CreateDeployment(ctx context.Context, req *model.CreateDeploy
 		initialStatus = model.StatusUnrelease // 计划发布
 	}
 
-	query := `INSERT INTO deploy_tasks (id, start_time, end_time, target_ratio, instances, deploy_state) 
-	          VALUES ($1, $2, $3, $4, $5, $6)`
+	query := `INSERT INTO deploy_tasks (service, version, start_time, end_time, target_ratio, instances, deploy_state)
+	          VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
 	// 默认实例为空数组
 	instances := []string{}
 	instancesJSON, _ := json.Marshal(instances)
 
-	_, err := d.ExecContext(ctx, query, deployID, req.ScheduleTime, nil, 0.0, string(instancesJSON), initialStatus)
-	if err != nil {
-		return "", err
-	}
-
-	return deployID, nil
+	_, err := d.ExecContext(ctx, query, req.Service, req.Version, req.ScheduleTime, nil, 0.0, string(instancesJSON), initialStatus)
+	return err
 }
 
-// GetDeploymentByID 根据ID获取发布任务详情
-func (d *Database) GetDeploymentByID(ctx context.Context, deployID string) (*model.Deployment, error) {
-	query := `SELECT id, start_time, end_time, target_ratio, instances, deploy_state 
-	          FROM deploy_tasks WHERE id = $1`
-	row := d.QueryRowContext(ctx, query, deployID)
+// UpdateDeploymentStatus 更新部署任务状态
+func (d *Database) UpdateDeploymentStatus(ctx context.Context, service, version string, status model.DeployState) error {
+	query := `UPDATE deploy_tasks SET deploy_state = $1 WHERE service = $2 AND version = $3`
+	_, err := d.ExecContext(ctx, query, status, service, version)
+	return err
+}
+
+// UpdateDeploymentFinishTime 更新部署任务完成时间
+func (d *Database) UpdateDeploymentFinishTime(ctx context.Context, service, version string, finishTime time.Time) error {
+	query := `UPDATE deploy_tasks SET end_time = $1 WHERE service = $2 AND version = $3`
+	_, err := d.ExecContext(ctx, query, finishTime, service, version)
+	return err
+}
+
+// GetDeploymentByServiceAndVersion 根据服务名和版本获取发布任务详情
+func (d *Database) GetDeploymentByServiceAndVersion(ctx context.Context, service, version string) (*model.Deployment, error) {
+	query := `SELECT service, version, start_time, end_time, target_ratio, instances, deploy_state
+	          FROM deploy_tasks WHERE service = $1 AND version = $2`
+	row := d.QueryRowContext(ctx, query, service, version)
 
 	var task model.ServiceDeployTask
 	var instancesJSON string
-	if err := row.Scan(&task.ID, &task.StartTime, &task.EndTime, &task.TargetRatio,
+	if err := row.Scan(&task.Service, &task.Version, &task.StartTime, &task.EndTime, &task.TargetRatio,
 		&instancesJSON, &task.DeployState); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -62,7 +69,8 @@ func (d *Database) GetDeploymentByID(ctx context.Context, deployID string) (*mod
 	}
 
 	deployment := &model.Deployment{
-		ID:           task.ID,
+		Service:      task.Service,
+		Version:      task.Version,
 		Status:       task.DeployState,
 		ScheduleTime: task.StartTime,
 		FinishTime:   task.EndTime,
@@ -73,7 +81,7 @@ func (d *Database) GetDeploymentByID(ctx context.Context, deployID string) (*mod
 
 // GetDeployments 获取发布任务列表
 func (d *Database) GetDeployments(ctx context.Context, query *model.DeploymentQuery) ([]model.Deployment, error) {
-	sql := `SELECT id, start_time, end_time, target_ratio, instances, deploy_state 
+	sql := `SELECT service, version, start_time, end_time, target_ratio, instances, deploy_state
 	        FROM deploy_tasks WHERE 1=1`
 	args := []any{}
 
@@ -82,8 +90,10 @@ func (d *Database) GetDeployments(ctx context.Context, query *model.DeploymentQu
 		args = append(args, query.Type)
 	}
 
-	// 注意：新的deploy_tasks表没有service字段，暂时忽略service过滤
-	// TODO: 需要根据业务逻辑决定如何处理service过滤
+	if query.Service != "" {
+		sql += " AND service = $" + strconv.Itoa(len(args)+1)
+		args = append(args, query.Service)
+	}
 
 	sql += " ORDER BY start_time DESC"
 
@@ -102,7 +112,7 @@ func (d *Database) GetDeployments(ctx context.Context, query *model.DeploymentQu
 	for rows.Next() {
 		var task model.ServiceDeployTask
 		var instancesJSON string
-		if err := rows.Scan(&task.ID, &task.StartTime, &task.EndTime, &task.TargetRatio,
+		if err := rows.Scan(&task.Service, &task.Version, &task.StartTime, &task.EndTime, &task.TargetRatio,
 			&instancesJSON, &task.DeployState); err != nil {
 			return nil, err
 		}
@@ -115,7 +125,8 @@ func (d *Database) GetDeployments(ctx context.Context, query *model.DeploymentQu
 		}
 
 		deployment := model.Deployment{
-			ID:           task.ID,
+			Service:      task.Service,
+			Version:      task.Version,
 			Status:       task.DeployState,
 			ScheduleTime: task.StartTime,
 			FinishTime:   task.EndTime,
@@ -128,14 +139,11 @@ func (d *Database) GetDeployments(ctx context.Context, query *model.DeploymentQu
 }
 
 // UpdateDeployment 修改未开始的发布任务
-func (d *Database) UpdateDeployment(ctx context.Context, deployID string, req *model.UpdateDeploymentRequest) error {
+func (d *Database) UpdateDeployment(ctx context.Context, service, version string, req *model.UpdateDeploymentRequest) error {
 	sql := `UPDATE deploy_tasks SET `
 	args := []any{}
 	updates := []string{}
 	paramIndex := 1
-
-	// 注意：新的deploy_tasks表没有version字段，暂时忽略version更新
-	// TODO: 需要根据业务逻辑决定如何处理version更新
 
 	if req.ScheduleTime != nil {
 		updates = append(updates, "start_time = $"+strconv.Itoa(paramIndex))
@@ -152,46 +160,49 @@ func (d *Database) UpdateDeployment(ctx context.Context, deployID string, req *m
 		sql += ", " + updates[i]
 	}
 
-	sql += " WHERE id = $" + strconv.Itoa(paramIndex) + " AND deploy_state = $" + strconv.Itoa(paramIndex+1)
-	args = append(args, deployID, model.StatusUnrelease)
+	sql += " WHERE service = $" + strconv.Itoa(paramIndex) + " AND version = $" + strconv.Itoa(paramIndex+1) + " AND deploy_state = $" + strconv.Itoa(paramIndex+2)
+	args = append(args, service, version, model.StatusUnrelease)
 
 	_, err := d.ExecContext(ctx, sql, args...)
 	return err
 }
 
 // DeleteDeployment 删除未开始的发布任务
-func (d *Database) DeleteDeployment(ctx context.Context, deployID string) error {
-	query := `DELETE FROM deploy_tasks WHERE id = $1 AND deploy_state = $2`
-	_, err := d.ExecContext(ctx, query, deployID, model.StatusUnrelease)
+func (d *Database) DeleteDeployment(ctx context.Context, service, version string) error {
+	query := `DELETE FROM deploy_tasks WHERE service = $1 AND version = $2 AND deploy_state = $3`
+	_, err := d.ExecContext(ctx, query, service, version, model.StatusUnrelease)
 	return err
 }
 
 // PauseDeployment 暂停正在灰度的发布任务
-func (d *Database) PauseDeployment(ctx context.Context, deployID string) error {
-	query := `UPDATE deploy_tasks SET deploy_state = $1 WHERE id = $2 AND deploy_state = $3`
-	_, err := d.ExecContext(ctx, query, model.StatusStop, deployID, model.StatusDeploying)
+func (d *Database) PauseDeployment(ctx context.Context, service, version string) error {
+	query := `UPDATE deploy_tasks SET deploy_state = $1 WHERE service = $2 AND version = $3 AND deploy_state = $4`
+	_, err := d.ExecContext(ctx, query, model.StatusStop, service, version, model.StatusDeploying)
 	return err
 }
 
 // ContinueDeployment 继续发布
-func (d *Database) ContinueDeployment(ctx context.Context, deployID string) error {
-	query := `UPDATE deploy_tasks SET deploy_state = $1 WHERE id = $2 AND deploy_state = $3`
-	_, err := d.ExecContext(ctx, query, model.StatusDeploying, deployID, model.StatusStop)
+func (d *Database) ContinueDeployment(ctx context.Context, service, version string) error {
+	query := `UPDATE deploy_tasks SET deploy_state = $1 WHERE service = $2 AND version = $3 AND deploy_state = $4`
+	_, err := d.ExecContext(ctx, query, model.StatusDeploying, service, version, model.StatusStop)
 	return err
 }
 
 // RollbackDeployment 回滚发布任务
-func (d *Database) RollbackDeployment(ctx context.Context, deployID string) error {
-	query := `UPDATE deploy_tasks SET deploy_state = $1 WHERE id = $2`
-	_, err := d.ExecContext(ctx, query, model.StatusRollback, deployID)
+func (d *Database) RollbackDeployment(ctx context.Context, service, version string) error {
+	query := `UPDATE deploy_tasks SET deploy_state = $1 WHERE service = $2 AND version = $3`
+	_, err := d.ExecContext(ctx, query, model.StatusRollback, service, version)
 	return err
 }
 
 // CheckDeploymentConflict 检查发布冲突
-// 注意：新的deploy_tasks表没有service和version字段，这个方法需要重新设计
-// TODO: 需要根据业务逻辑决定如何检查部署冲突
 func (d *Database) CheckDeploymentConflict(ctx context.Context, service, version string) (bool, error) {
-	// 暂时返回false，表示没有冲突
-	// 实际业务中可能需要通过其他方式检查冲突，比如检查正在部署的任务数量
-	return false, nil
+	// 检查是否已存在相同服务和版本的部署任务
+	query := `SELECT COUNT(*) FROM deploy_tasks WHERE service = $1 AND version = $2 AND deploy_state IN ($3, $4, $5)`
+	var count int
+	err := d.QueryRowContext(ctx, query, service, version, model.StatusDeploying, model.StatusUnrelease, model.StatusStop).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
