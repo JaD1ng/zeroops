@@ -14,7 +14,7 @@ alerting:
   alertmanagers:
     - static_configs:
         - targets:
-            - 'host.docker.internal:8081'  # Prometheus Adapter 运行在宿主机的 8081 端口
+            - '10.210.10.33:9999'  # Prometheus Adapter 运行在 9999 端口
       api_version: v2  # 使用 Alertmanager API v2
 
 scrape_configs:
