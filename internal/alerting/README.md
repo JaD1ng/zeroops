@@ -181,7 +181,6 @@ docker exec -i zeroops-postgres-1 psql -U postgres -d zeroops -c \
 ```bash
 # 方式 A：通过 docker 容器执行（推荐 dev，本仓文档默认使用名为 zeroops-postgres-1 的容器）
 cat scripts/sql/alert_rules_bootstrap.sql | docker exec -i zeroops-postgres-1 psql -U postgres -d zeroops
-
 # 方式 B：本机已安装 psql 客户端
 psql -U postgres -d zeroops -f scripts/sql/alert_rules_bootstrap.sql
 ```
