@@ -83,9 +83,14 @@ func BootstrapRulesFromConfigWithApp(ctx context.Context, db *adb.Database, c *c
 			for _, m := range r.Metas {
 				labelsJSON, _ := json.Marshal(m.Labels)
 				metaUpdates = append(metaUpdates, ruleMetaUpdate{Labels: string(labelsJSON), Threshold: m.Threshold})
+				log.Debug().Str("rule", r.Name).
+					Str("bootstrap_labels", string(labelsJSON)).
+					Str("bootstrap_labels_ckey", canonicalKeyFromLabelsJSON(string(labelsJSON))).
+					Float64("bootstrap_threshold", m.Threshold).
+					Msg("bootstrap meta item")
 			}
 			if len(metaUpdates) > 0 {
-				if err := putRuleMetasBootstrap(ctx, client, base, r.Name, metaUpdates); err != nil {
+				if err := putRuleMetas(ctx, client, base, r.Name, metaUpdates); err != nil {
 					log.Error().Err(err).Str("rule", r.Name).Msg("external PUT rule metas failed")
 					continue
 				}
@@ -147,13 +152,16 @@ func parseWatchTimeToSeconds(watchTime string) (int, error) {
 	return int(duration.Seconds()), nil
 }
 
-// putRuleMetasBootstrap calls PUT /v1/alert-rules-meta/{rule_name} with the correct format
-func putRuleMetasBootstrap(ctx context.Context, client *http.Client, base, ruleName string, metas []ruleMetaUpdate) error {
+// putRuleMetas calls PUT /v1/alert-rules-meta/{rule_name} with the correct format
+func putRuleMetas(ctx context.Context, client *http.Client, base, ruleName string, metas []ruleMetaUpdate) error {
 	endpoint := base + "/v1/alert-rules-meta/" + url.PathEscape(ruleName)
+	log.Debug().Str("endpoint", endpoint).Str("rule_name", ruleName).Int("meta_count", len(metas)).Msg("prepared bootstrap ruleset meta PUT endpoint")
 	body := map[string]interface{}{
 		"metas": metas,
 	}
+	log.Debug().Any("body", body).Msg("bootstrap ruleset meta PUT body")
 	bs, _ := json.Marshal(body)
+	log.Debug().Str("bs", string(bs)).Msg("bootstrap ruleset meta PUT bs")
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, io.NopCloser(strings.NewReader(string(bs))))
 	if err != nil {
 		return err

@@ -315,6 +315,49 @@ curl -X POST http://localhost:8080/v1/integrations/alertmanager/webhook \
   }'
 ```
 
+### 4. 获取告警规则变更记录
+
+用于查询统一化告警规则的变更记录（阈值、观察窗口等），支持按时间游标分页。
+
+**请求：**
+```http
+GET /v1/changelog/alertrules?start={start}&limit={limit}
+```
+
+**查询参数：**
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| start | string | 否 | 游标时间（ISO 8601）。第一页可不传；翻页使用上次响应的 `next` |
+| limit | integer | 是 | 返回数量，范围 1-100 |
+
+分页说明：按 `change_time` 倒序返回，`start` 为上界（`<= start`）。响应中的 `next` 为当前页最后一条的 `editTime`。
+
+**响应示例：**
+```json
+{
+  "items": [
+    {
+      "name": "http_request_latency_p98_seconds_P1",
+      "editTime": "2024-01-03T03:00:00Z",
+      "scope": "",
+      "values": [
+        {"name": "threshold", "old": "10", "new": "15"}
+      ],
+      "reason": "Update"
+    }
+  ],
+  "next": "2024-01-03T03:00:00Z"
+}
+```
+
+**状态码：**
+- `200 OK`: 成功
+- `400 Bad Request`: 参数错误
+- `401 Unauthorized`: 认证失败
+- `500 Internal Server Error`: 服务器内部错误
+
 ## 版本历史
 
+- **v1.1** (2025-10-07): 新增 `GET /v1/changelog/alertrules`
 - **v1.0** (2025-09-11): 初始版本，支持基础的告警列表和详情查询

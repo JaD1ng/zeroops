@@ -84,7 +84,8 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useAppStore, type ChangeItem, type AlarmChangeItem } from '@/stores/app'
 import { mockApi } from '@/mock/api'
-import type { DeploymentChangelogResponse, DeploymentChangelogItem, AlertRuleChangelogResponse, AlertRuleChangeItem } from '@/mock/services'
+import { apiService } from '@/api'
+import type { DeploymentChangelogResponse } from '@/mock/services'
 import ChangeCard from '@/components/ChangeCard.vue'
 import AlarmChangeCard from '@/components/AlarmChangeCard.vue'
 import { ArrowLeft, Loading } from '@element-plus/icons-vue'
@@ -154,7 +155,7 @@ const transformDeploymentChangelogToChangeItems = (changelogData: any[]): Change
 }
 
 // 数据转换函数：将告警规则变更记录API返回的数据转换为前端需要的格式
-const transformAlertRuleChangelogToAlarmChangeItems = (changelogData: AlertRuleChangeItem[]): AlarmChangeItem[] => {
+const transformAlertRuleChangelogToAlarmChangeItems = (changelogData: any[]): AlarmChangeItem[] => {
   return changelogData.map((item, index) => {
     // 从scope中提取服务名
     const serviceName = item.scope?.startsWith('service:') ? item.scope.slice('service:'.length) + '服务' : '全局服务'
@@ -200,7 +201,7 @@ const loadDeploymentChangelog = async (start?: string, limit?: number) => {
   }
 }
 
-// 加载告警规则变更记录
+// 加载告警规则变更记录（使用真实 API）
 const loadAlertRuleChangelog = async (start?: string, limit?: number) => {
   if (alertRuleLoading.value) return // 防止重复加载
   
@@ -208,13 +209,13 @@ const loadAlertRuleChangelog = async (start?: string, limit?: number) => {
     alertRuleLoading.value = true
     error.value = null
     
-    const response = await mockApi.getAlertRuleChangelog(start, limit)
-    alertRuleChangelog.value = response
+    const response = await apiService.getAlertRuleChangelog(start, limit ?? 10)
+    alertRuleChangelog.value = response.data
     
     // 转换数据格式
-    alarmChangeItems.value = transformAlertRuleChangelogToAlarmChangeItems(response.items)
+    alarmChangeItems.value = transformAlertRuleChangelogToAlarmChangeItems(response.data.items)
     
-    console.log('告警规则变更记录加载成功:', response)
+    console.log('告警规则变更记录加载成功:', response.data)
   } catch (err) {
     error.value = '加载告警规则变更记录失败'
     console.error('加载告警规则变更记录失败:', err)
