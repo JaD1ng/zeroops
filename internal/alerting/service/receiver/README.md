@@ -34,35 +34,45 @@ nohup go run ./cmd/zeroops -- 1>/tmp/zeroops.out 2>&1 &
 4) 用 curl 模拟 Alertmanager 发送 firing 事件
 
 ```bash
-curl -u alert:REDACTED -H 'Content-Type: application/json' \
-  -X POST http://localhost:8080/v1/integrations/alertmanager/webhook -d '{
-  "receiver":"our-webhook",
-  "status":"firing",
-  "alerts":[{
+curl -X POST http://localhost:8080/v1/integrations/alertmanager/webhook \
+  -H 'Content-Type: application/json' \
+  -u "alert:REDACTED" \
+  -d '{
+    "receiver":"our-webhook",
     "status":"firing",
-    "labels":{"alertname":"HighRequestLatency","service":"serviceA","severity":"P1","idc":"yzh"},
-    "annotations":{"summary":"p95 latency over threshold","description":"apitime p95 > 450ms"},
-    "startsAt":"2025-05-05T11:00:00Z",
-    "endsAt":"0001-01-01T00:00:00Z",
-    "generatorURL":"http://prometheus/graph?g0.expr=...",
-    "fingerprint":"3b1b7f4e8f0e"
-  }],
-  "groupLabels":{"alertname":"HighRequestLatency"},
-  "commonLabels":{"service":"serviceA","severity":"P1"},
-  "version":"4"
-}'
+    "alerts":[
+      {
+        "status":"firing",
+        "labels":{
+            "alertname":"http_request_latency_p98_seconds_P0",
+            "service":"storage-service",
+            "severity":"P0",
+            "idc":"yzh",
+            "service_version": "v1.0.0"
+            },
+        "annotations":{"summary":"p95 latency over threshold","description":"HTTP latency P98 threshold (P0)"},
+        "startsAt":"2025-05-05T11:00:00Z",
+        "endsAt":"0001-01-01T00:00:00Z",
+        "generatorURL":"http://prometheus/graph?g0.expr=...",
+        "fingerprint":"3b1b7f4e8f0e"
+      }
+    ],
+    "groupLabels":{"alertname":"http_request_latency_p98_seconds_P0"},
+    "commonLabels":{"service":"storage-service","severity":"P0"},
+    "version":"4"
+  }'
 ```
 
 5) 在数据库中验证（应看到一行 Open/P1/Pending 且标题匹配的记录）
 
 ```bash
-docker exec -i zeroops-pg psql -U postgres -d zeroops -c \
-  "SELECT id,state,level,alert_state,title,alert_since FROM alert_issues WHERE title='p95 latency over threshold' AND alert_since='2025-05-05 11:00:00'::timestamp;"
+docker exec -i zeroops-postgres-1 psql -U postgres -d zeroops -c \
+  "SELECT id,state,level,alert_state,title,alert_since FROM alert_issues;"
 ```
 ```bash
 # 更易读（格式化 JSON）labels
-docker exec -i zeroops-pg psql -U postgres -d zeroops -c \
-   "SELECT jsonb_pretty(labels::jsonb) AS label FROM alert_issues WHERE title='p95 latency over threshold' AND alert_since='2025-05-05 11:00:00'::timestamp;"
+docker exec -i zeroops-postgres-1 psql -U postgres -d zeroops -c \
+   "SELECT jsonb_pretty(labels::jsonb) AS label FROM alert_issues;"
 
 ```
 
@@ -81,7 +91,7 @@ receiver/ — 从 Alertmanager Webhook 到 alert_issues 入库的实施计划
 	•	alertState 默认 Pending
 	•	其余字段按 webhook 请求体解析、校验后写入
 
-本计划仅覆盖「首次创建」逻辑；resolved（恢复）更新逻辑可在后续补充（例如切换 state=Closed、alertState=Restored）。
+本计划覆盖「首次创建（firing）」与「恢复（resolved）」两类逻辑。
 
 ⸻
 
@@ -519,5 +529,113 @@ Redis 中应看到：
 	•	key: alert:issue:<id> 值为 JSON 且 TTL≈3 天
 	•	集合 alert:index:open 中包含 <id>
 	•	若有 service=serviceA，则 alert:index:svc:serviceA:open 包含 <id>
+
+⸻
+
+⑪ 恢复事件（resolved）处理
+<!-- 调整阈值后 -->
+目标：当 Alertmanager 传入 status="resolved" 的告警时，定位对应的首次入库记录（firing），并完成：
+- 将告警的 `endsAt` 写入 `alert_issues.resolved_at`
+- 根据最近一次部署任务（`deploy_tasks`）判断 `alert_issues.alert_state`：
+  - 若存在匹配的部署记录且 `deploy_state = Rollback` → 置为 `Restored`
+  - 其他情况 → 置为 `AutoRestored`
+
+匹配规则（建议）：
+- 通过 `(am_fingerprint, startsAt)` 定位 firing 记录：
+  - `alert_since = startsAt`
+  - `labels` JSON 中包含 `{"key":"am_fingerprint","value":"<fingerprint>"}`
+
+示例 SQL（PostgreSQL, labels 为 json/jsonb 且结构为数组 [{key,value}]）：
+
+```sql
+-- 1) 找到对应的 firing 记录（示例使用参数 $1=fingerprint, $2=startsAt）
+SELECT id
+FROM alert_issues
+WHERE alert_since = $2
+  AND EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(labels::jsonb) AS e(obj)
+    WHERE e.obj->>'key' = 'am_fingerprint'
+      AND e.obj->>'value' = $1
+  )
+LIMIT 1;
+
+-- 2) 基于 service/version 判定 deploy_tasks（$3=service, $4=version 可空字符串）
+SELECT deploy_state
+FROM deploy_tasks
+WHERE service = $3 AND version = $4
+ORDER BY created_at DESC
+LIMIT 1;
+
+-- 3) 回写 resolved_at 与 alert_state（$5=resolved_at, $6=alert_state, $7=id）
+UPDATE alert_issues
+SET resolved_at = $5,
+    alert_state = $6
+WHERE id = $7;
+```
+
+Handler 伪码（按单条 alert 处理，忽略失败不阻断主流程）：
+
+```go
+for _, a := range req.Alerts {
+    if strings.ToLower(a.Status) != "resolved" {
+        continue
+    }
+
+    // 1) 查找对应 firing 记录
+    issueID, found, err := h.dao.FindIssueByFingerprintAndStart(ctx, a.Fingerprint, a.StartsAt)
+    if err != nil || !found {
+        // 记录日志后跳过（可能历史缺失/重复恢复）
+        continue
+    }
+
+    // 2) 取 service/version（允许为空字符串）
+    svc := strings.TrimSpace(a.Labels["service"])
+    ver := strings.TrimSpace(a.Labels["service_version"]) // 若无该 label 则为空
+
+    // 3) 查询最近一次部署任务
+    deployState, hasDeploy, _ := h.dao.FindLatestDeployState(ctx, svc, ver)
+
+    // 4) 计算新的 alert_state
+    newAlertState := "AutoRestored"
+    if hasDeploy && strings.EqualFold(deployState, "Rollback") {
+        newAlertState = "Restored"
+    }
+
+    // 5) 更新 issue：resolved_at 与 alert_state
+    _ = h.dao.MarkIssueResolved(ctx, issueID, a.EndsAt.UTC(), newAlertState)
+}
+```
+
+注意：
+- `resolved_at` 建议统一存 UTC 时间；`alert_state` 仅在恢复时在 `Restored/AutoRestored` 间二选一，不改变 `state` 字段（是否关闭 `state=Closed` 由后续流程决定）。
+- `deploy_tasks` 的匹配以 `(service, version)` 为键，若 `version` 缺失则可用空字符串匹配，或在 DAO 层做降级策略（仅按 service 匹配）。
+- 查询 JSON 数组的性能可通过为 `labels` 建立 GIN 索引并对查询表达式做函数化处理来优化，或将 `am_fingerprint` 单独列化并与 `alert_since` 建唯一索引。
+
+最小联调（resolved 示例）：
+
+```bash
+curl -u alert:REDACTED -H 'Content-Type: application/json' \
+  -X POST http://localhost:8080/v1/integrations/alertmanager/webhook -d '{
+  "receiver":"our-webhook",
+  "status":"resolved",
+  "alerts":[{
+    "status":"resolved",
+    "labels":{"alertname":"HighRequestLatency","service":"serviceA","severity":"P1","idc":"yzh","service_version":"v1.3.7"},
+    "annotations":{"summary":"p95 latency over threshold"},
+    "startsAt":"2025-05-05T11:00:00Z",
+    "endsAt":"2025-05-05T11:07:30Z",
+    "generatorURL":"http://prometheus/graph?g0.expr=...",
+    "fingerprint":"3b1b7f4e8f0e"
+  }],
+  "groupLabels":{"alertname":"HighRequestLatency"},
+  "commonLabels":{"service":"serviceA","severity":"P1"},
+  "version":"4"
+}'
+```
+
+期望：
+- `alert_issues` 中对应记录的 `resolved_at=2025-05-05 11:07:30+00`
+- 若存在最近部署且 `deploy_state=Rollback` → `alert_state=Restored`；否则 `alert_state=AutoRestored`
 
 ⸻

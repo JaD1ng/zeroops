@@ -1,0 +1,30 @@
+services:
+  alerting-ml:
+    build:
+      context: ./services/alerting-ml-python
+      dockerfile: Dockerfile
+    ports:
+      - "18081:8081"
+
+  zeroops:
+    build:
+      context: .
+      dockerfile: ./cmd/zeroops/Dockerfile
+    depends_on:
+      - alerting-ml
+    networks:
+      - infra-network
+    environment:
+      # these will be defaulted by config.docker.json but env can still override
+      LOG_LEVEL: debug
+    volumes:
+      - ./config.docker.json:/app/config.json:ro
+      - ./configs:/app/configs:ro
+    ports:
+      - "18080:8080"
+
+networks:
+  infra-network:
+    external: true
+    name: mock-s3_infra-network
+

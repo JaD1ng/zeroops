@@ -1845,27 +1845,9 @@ loadServiceAlertStatus()
  */
 export const serviceVersionAlertStatusMap: Record<string, Record<string, ServiceAlertStatus>> = {}
 
-const saveServiceVersionAlertStatus = () => {
-  try {
-    localStorage.setItem('serviceVersionAlertStatusMap', JSON.stringify(serviceVersionAlertStatusMap))
-    console.log('服务版本告警状态已保存到 localStorage')
-  } catch (error) {
-    console.error('保存服务版本告警状态失败:', error)
-  }
-}
+const saveServiceVersionAlertStatus = () => {}
 
-const loadServiceVersionAlertStatus = () => {
-  try {
-    const data = localStorage.getItem('serviceVersionAlertStatusMap')
-    if (data) {
-      const parsed = JSON.parse(data)
-      Object.assign(serviceVersionAlertStatusMap, parsed)
-      console.log('已从 localStorage 加载服务版本告警状态')
-    }
-  } catch (error) {
-    console.error('从 localStorage 加载服务版本告警状态失败:', error)
-  }
-}
+const loadServiceVersionAlertStatus = () => {}
 
 /**
  * 根据告警状态更新服务版本状态
@@ -1919,8 +1901,7 @@ export const clearServiceVersionAlertStatus = (serviceName: string, version?: st
   console.log(`已清除服务 ${serviceName} ${version ? '版本 ' + version : '所有版本'} 的告警状态`)
 }
 
-// 页面加载时恢复服务版本告警状态
-loadServiceVersionAlertStatus()
+// 页面加载时不再从 localStorage 恢复服务版本告警状态（禁用持久化）
 
 // ==================== 发布任务状态管理 ====================
 // 管理服务的发布任务状态，用于显示发布指示器

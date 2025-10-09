@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fox-gonic/fox"
+	"github.com/gin-gonic/gin"
 )
 
 type mockDAO struct{ calls int }
@@ -17,7 +17,7 @@ type mockDAO struct{ calls int }
 func (m *mockDAO) InsertAlertIssue(_ context.Context, _ *AlertIssueRow) error { m.calls++; return nil }
 
 func TestHandlerCreatesIssues(t *testing.T) {
-	r := fox.New()
+	r := gin.New()
 	m := &mockDAO{}
 	h := NewHandler(m)
 	RegisterReceiverRoutes(r, h)

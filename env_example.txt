@@ -150,3 +150,31 @@ REMEDIATION_ROLLBACK_URL=http://localhost:8080/v1/deployments/%s/rollback
 
 # 回滚等待时间（用于演示观察 InProcessing → Restored 的间隔）
 REMEDIATION_ROLLBACK_SLEEP=30s
+
+# =============================================================================
+# 日志与 Prometheus/异常检测/规则引导 额外配置（可选）
+# =============================================================================
+
+# 日志级别：trace|debug|info|warn|error（默认 debug）
+LOG_LEVEL=debug
+
+# Prometheus 基本配置（健康检查 PromQL 查询）
+PROMETHEUS_URL=http://localhost:9090
+PROMETHEUS_QUERY_TIMEOUT=30s
+
+# 异常检测服务（alerting-ml-python）
+ANOMALY_DETECTION_API_URL=http://localhost:8081/api/v1/anomaly/detect
+ANOMALY_DETECTION_API_TIMEOUT=10s
+
+# Prometheus 异常检测调度参数
+PROMETHEUS_ANOMALY_INTERVAL=6h
+PROMETHEUS_QUERY_STEP=1m
+PROMETHEUS_QUERY_RANGE=6h
+
+# 规则集引导/外部规则服务（可选，不设置则跳过）
+# JSON 规则文件路径（留空表示不加载）
+ALERT_RULES_CONFIG_FILE=
+# 外部规则服务 Base URL（留空表示不调用外部 PUT）
+RULESET_API_BASE=
+# 外部规则服务超时
+RULESET_API_TIMEOUT=10s

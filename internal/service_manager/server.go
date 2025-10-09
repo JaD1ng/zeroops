@@ -3,7 +3,7 @@ package servicemanager
 import (
 	"fmt"
 
-	"github.com/fox-gonic/fox"
+	"github.com/gin-gonic/gin"
 	"github.com/qiniu/zeroops/internal/config"
 	"github.com/qiniu/zeroops/internal/service_manager/api"
 	"github.com/qiniu/zeroops/internal/service_manager/database"
@@ -35,7 +35,7 @@ func NewServiceManagerServer(cfg *config.Config) (*ServiceManagerServer, error) 
 	return server, nil
 }
 
-func (s *ServiceManagerServer) UseApi(router *fox.Engine) error {
+func (s *ServiceManagerServer) UseApi(router *gin.Engine) error {
 	_, err := api.NewApi(s.db, s.service, router)
 	if err != nil {
 		return err

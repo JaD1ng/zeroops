@@ -14,6 +14,7 @@ import (
 
 func ensureSchema(t *testing.T, db *adb.Database) {
 	t.Helper()
+	// TODO：更新 alert_issues 表
 	const schema = `
 CREATE TABLE IF NOT EXISTS alert_issues (
   id           varchar(64)  PRIMARY KEY,
