@@ -70,7 +70,7 @@ func (s *Service) GetServiceActiveVersions(ctx context.Context, serviceName stri
 	var activeVersions []model.ActiveVersionItem
 	for version, versionInstances := range versionMap {
 		// 获取服务状态
-		state, err := s.db.GetServiceState(ctx, serviceName)
+		state, err := s.db.GetServiceStateAndVersion(ctx, serviceName, version)
 		if err != nil {
 			log.Error().Err(err).Str("service", serviceName).Msg("failed to get service state")
 		}

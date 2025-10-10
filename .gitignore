@@ -314,3 +314,8 @@ __debug_bin
 
 CLAUDE.md
 .vercel
+
+
+*package-lock.json
+client/package-lock.json
+yarm.lock

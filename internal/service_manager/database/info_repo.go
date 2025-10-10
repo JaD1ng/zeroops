@@ -170,3 +170,20 @@ func (d *Database) GetServiceState(ctx context.Context, serviceName string) (*mo
 
 	return &state, nil
 }
+
+func (d *Database) GetServiceStateAndVersion(ctx context.Context, serviceName string, version string) (*model.ServiceState, error) {
+	query := `SELECT service, version, report_at, resolved_at, health_state, correlation_id
+	          FROM service_states WHERE service = $1 AND version = $2 ORDER BY report_at DESC LIMIT 1`
+	row := d.QueryRowContext(ctx, query, serviceName, version)
+
+	var state model.ServiceState
+	if err := row.Scan(&state.Service, &state.Version, &state.ReportAt,
+		&state.ResolvedAt, &state.HealthState, &state.CorrelationID); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &state, nil
+}
