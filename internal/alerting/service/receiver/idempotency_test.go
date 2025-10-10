@@ -6,10 +6,18 @@ import (
 )
 
 func TestBuildIdempotencyKey(t *testing.T) {
-	a := AMAlert{Fingerprint: "fp", StartsAt: time.Unix(0, 123).UTC()}
+	a := AMAlert{
+		Labels: KV{
+			"service":         "test-service",
+			"service_version": "v1.0.0",
+		},
+		StartsAt: time.Unix(0, 123).UTC(),
+		Status:   "firing",
+	}
 	key := BuildIdempotencyKey(a)
-	if key == "" || key[:2] != "fp" {
-		t.Fatalf("unexpected key: %s", key)
+	expected := "test-service|v1.0.0|1970-01-01T00:00:00.000000123Z|firing"
+	if key != expected {
+		t.Fatalf("unexpected key: %s, expected: %s", key, expected)
 	}
 }
 

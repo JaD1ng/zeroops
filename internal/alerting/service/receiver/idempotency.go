@@ -11,7 +11,9 @@ var (
 )
 
 func BuildIdempotencyKey(a AMAlert) string {
-	return a.Fingerprint + "|" + a.StartsAt.UTC().Format(time.RFC3339Nano)
+	service := a.Labels["service"]
+	serviceVersion := a.Labels["service_version"]
+	return service + "|" + serviceVersion + "|" + a.StartsAt.UTC().Format(time.RFC3339Nano) + "|" + a.Status
 }
 
 func AlreadySeen(key string) bool {
