@@ -614,9 +614,9 @@ const loadServicesData = async () => {
   error.value = null
   
   try {
-    // 加载服务数据 - 使用Mock API
-    const servicesResponse = await mockApi.getServices()
-    
+    // 加载服务数据 - 调用真实后端API
+    const response = await apiService.getServices()
+    const servicesResponse = response.data
     
     servicesData.value = servicesResponse
     
@@ -699,8 +699,9 @@ const transformActiveVersionsToFrontend = (activeVersionsResponse: ServiceActive
 // 获取服务详情 - 使用新的API接口
 const loadServiceDetail = async (serviceName: string) => {
   try {
-    // 调用活跃版本API - 使用Mock API
-    const activeVersionsResponse = await mockApi.getServiceActiveVersions(serviceName)
+    // 调用活跃版本API - 调用真实后端API
+    const response = await apiService.getServiceActiveVersions(serviceName)
+    const activeVersionsResponse = response.data
     
     // 转换数据格式
     const transformedVersions = transformActiveVersionsToFrontend(activeVersionsResponse, serviceName)
@@ -733,12 +734,12 @@ const loadServiceDetail = async (serviceName: string) => {
   }
 }
 
-// 获取服务指标数据 - 使用Mock API（后端暂未实现）
+// 获取服务指标数据 - 调用真实后端API
 const loadServiceMetrics = async (serviceName: string) => {
   try {
-    // 调用Mock API，等待后端实现真实接口
-    const metricsResponse = await mockApi.getServiceMetrics(serviceName)
-    return metricsResponse
+    // 调用真实后端API
+    const response = await apiService.getServiceMetrics(serviceName)
+    return response.data
   } catch (err) {
     console.warn(`获取服务 ${serviceName} 指标数据失败:`, err)
     // 不显示错误消息，因为某些服务可能没有指标数据
@@ -746,12 +747,12 @@ const loadServiceMetrics = async (serviceName: string) => {
   }
 }
 
-// 获取服务可发布版本列表 - 使用新的API接口
+// 获取服务可发布版本列表 - 调用真实后端API
 const loadServiceAvailableVersions = async (serviceName: string) => {
   try {
-    // 调用可发布版本API - 使用Mock API
-    const availableVersionsResponse = await mockApi.getServiceAvailableVersions(serviceName)
-    return availableVersionsResponse
+    // 调用真实后端API
+    const response = await apiService.getServiceAvailableVersions(serviceName)
+    return response.data
   } catch (err) {
     console.error('获取服务可发布版本失败:', err)
     ElMessage.error('获取服务可发布版本失败')
@@ -759,12 +760,12 @@ const loadServiceAvailableVersions = async (serviceName: string) => {
   }
 }
 
-// 获取服务发布计划列表 - 使用新的API接口
+// 获取服务发布计划列表 - 调用真实后端API
 const loadServiceDeploymentPlans = async (serviceName: string) => {
   try {
-    // 调用发布计划API - 使用Mock API
-    const deploymentPlansResponse = await mockApi.getServiceDeploymentPlans(serviceName)
-    return deploymentPlansResponse
+    // 调用真实后端API
+    const response = await apiService.getServiceDeploymentPlans(serviceName)
+    return response.data
   } catch (err) {
     console.error('获取服务发布计划失败:', err)
     ElMessage.error('获取服务发布计划失败')
@@ -772,16 +773,21 @@ const loadServiceDeploymentPlans = async (serviceName: string) => {
   }
 }
 
-// 获取服务指标数据 - 使用新的API接口
+// 获取服务指标数据 - 调用真实后端API
 const loadServiceMetricsData = async (serviceName: string, version: string) => {
   try {
-    // 并行获取四大黄金指标数据 - 使用Mock API
-    const [latencyData, trafficData, errorsData, saturationData] = await Promise.all([
-      mockApi.getServiceMetricsData(serviceName, 'latency', version),
-      mockApi.getServiceMetricsData(serviceName, 'traffic', version),
-      mockApi.getServiceMetricsData(serviceName, 'errors', version),
-      mockApi.getServiceMetricsData(serviceName, 'saturation', version)
+    // 并行获取四大黄金指标数据 - 调用真实后端API
+    const [latencyResponse, trafficResponse, errorsResponse, saturationResponse] = await Promise.all([
+      apiService.getServiceMetricsData(serviceName, 'latency', version),
+      apiService.getServiceMetricsData(serviceName, 'traffic', version),
+      apiService.getServiceMetricsData(serviceName, 'errors', version),
+      apiService.getServiceMetricsData(serviceName, 'saturation', version)
     ])
+    
+    const latencyData = latencyResponse.data
+    const trafficData = trafficResponse.data
+    const errorsData = errorsResponse.data
+    const saturationData = saturationResponse.data
     
     return {
       latency: latencyData,

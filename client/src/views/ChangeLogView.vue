@@ -205,13 +205,13 @@ const loadDeploymentChangelog = async (start?: string, limit?: number) => {
     deploymentLoading.value = true
     error.value = null
     
-    const response = await mockApi.getDeploymentChangelog(start, limit)
-    deploymentChangelog.value = response
+    const response = await apiService.getDeploymentChangelog(start, limit)
+    deploymentChangelog.value = response.data
     
     // 转换数据格式
-    changeItems.value = transformDeploymentChangelogToChangeItems(response.items)
+    changeItems.value = transformDeploymentChangelogToChangeItems(response.data.items)
     
-    console.log('部署变更记录加载成功:', response)
+    console.log('部署变更记录加载成功:', response.data)
   } catch (err) {
     error.value = '加载部署变更记录失败'
     console.error('加载部署变更记录失败:', err)
