@@ -581,6 +581,20 @@ const formatVersionForDisplay = (version: string): string => {
   return 'v' + version
 }
 
+// 工具函数：Mock服务名映射（将新服务名映射到Mock数据中的服务名）
+const mapToMockServiceName = (serviceName: string): string => {
+  const displayName = formatServiceNameForDisplay(serviceName)
+  
+  // 服务名映射表
+  const serviceNameMap: Record<string, string> = {
+    'queue': 'mq',           // queue服务使用mq的Mock数据
+    'storage-proxy': 's3',   // storage-proxy服务使用s3的Mock数据
+    'storage': 'stg'         // storage服务使用stg的Mock数据
+  }
+  
+  return serviceNameMap[displayName] || displayName
+}
+
 // 数据转换函数
 const transformServiceData = (data: ServicesResponse) => {
   const nodes: any[] = []
@@ -817,12 +831,15 @@ const loadServiceDetail = async (serviceName: string) => {
   }
 }
 
-// 获取服务指标数据 - 调用真实后端API
+// 获取服务指标统计数据 - 使用Mock数据
 const loadServiceMetrics = async (serviceName: string) => {
   try {
-    // 调用真实后端API
-    const response = await apiService.getServiceMetrics(serviceName)
-    return response.data
+    // 适配Mock数据格式：将服务名映射到Mock数据中的服务名
+    const mockServiceName = mapToMockServiceName(serviceName)
+    
+    // 调用Mock API
+    const metricsResponse = await mockApi.getServiceMetrics(mockServiceName)
+    return metricsResponse
   } catch (err) {
     console.warn(`获取服务 ${serviceName} 指标数据失败:`, err)
     // 不显示错误消息，因为某些服务可能没有指标数据
@@ -856,21 +873,22 @@ const loadServiceDeploymentPlans = async (serviceName: string) => {
   }
 }
 
-// 获取服务指标数据 - 调用真实后端API
+// 获取服务指标数据 - 使用Mock数据
 const loadServiceMetricsData = async (serviceName: string, version: string) => {
   try {
-    // 并行获取四大黄金指标数据 - 调用真实后端API
-    const [latencyResponse, trafficResponse, errorsResponse, saturationResponse] = await Promise.all([
-      apiService.getServiceMetricsData(serviceName, 'latency', version),
-      apiService.getServiceMetricsData(serviceName, 'traffic', version),
-      apiService.getServiceMetricsData(serviceName, 'errors', version),
-      apiService.getServiceMetricsData(serviceName, 'saturation', version)
-    ])
+    // 适配Mock数据格式：
+    // 1. 将服务名映射到Mock数据中的服务名
+    const mockServiceName = mapToMockServiceName(serviceName)
+    // 2. Mock中版本号带v前缀
+    const mockVersion = formatVersionForDisplay(version)
     
-    const latencyData = latencyResponse.data
-    const trafficData = trafficResponse.data
-    const errorsData = errorsResponse.data
-    const saturationData = saturationResponse.data
+    // 并行获取四大黄金指标数据 - 使用Mock API
+    const [latencyData, trafficData, errorsData, saturationData] = await Promise.all([
+      mockApi.getServiceMetricsData(mockServiceName, 'latency', mockVersion),
+      mockApi.getServiceMetricsData(mockServiceName, 'traffic', mockVersion),
+      mockApi.getServiceMetricsData(mockServiceName, 'errors', mockVersion),
+      mockApi.getServiceMetricsData(mockServiceName, 'saturation', mockVersion)
+    ])
     
     return {
       latency: latencyData,
