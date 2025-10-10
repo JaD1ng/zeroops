@@ -45,13 +45,13 @@
             <template v-for="(edge, idx) in edges" :key="`arrow-${idx}`">
               <marker
                 :id="`arrow-${idx}`"
-                markerWidth="8"
-                markerHeight="8"
-                refX="8"
-                refY="4"
+                markerWidth="12"
+                markerHeight="12"
+                refX="12"
+                refY="6"
                 orient="auto"
               >
-                <path d="M0,0 L0,8 L8,4 z" fill="#94a3b8" />
+                <path d="M0,0 L0,12 L12,6 z" fill="#94a3b8" />
               </marker>
             </template>
           </defs>
@@ -62,7 +62,7 @@
               :x2="getNodePosition(edge.target).x"
               :y2="getNodePosition(edge.target).y"
               stroke="#cbd5e1"
-              stroke-width="2"
+              stroke-width="3"
               :marker-end="`url(#arrow-${idx})`"
             />
           </template>
@@ -83,7 +83,15 @@
             class="node-circle"
             :style="{ backgroundColor: getNodeStatusColor(node) }"
           >
-            <span class="node-name">{{ node.name }}</span>
+            <div class="node-name-container">
+              <div 
+                v-for="(line, index) in (node.displayLines || [node.displayName || node.name])" 
+                :key="index"
+                class="node-name-line"
+              >
+                {{ line }}
+              </div>
+            </div>
             <!-- 灰度发布指示器 -->
             <div 
               v-if="hasRollingVersion(node)"
@@ -147,7 +155,7 @@
     >
       <div v-if="selectedNode" class="service-detail">
         <div class="detail-header">
-          <span>{{ selectedNode.name }} 服务概览</span>
+          <span>{{ selectedNode.displayName || selectedNode.name }} 服务概览</span>
           <el-tag :type="getStatusType(getNodeStatus(selectedNode))">
             {{ getNodeStatusText(getNodeStatus(selectedNode)) }}
           </el-tag>
@@ -232,7 +240,7 @@
                   </el-button>
                 </template>
                 <div class="release-plans">
-                  <div class="plans-header">{{ selectedNode.name }} 发布计划列表</div>
+                  <div class="plans-header">{{ selectedNode.displayName || selectedNode.name }} 发布计划列表</div>
                   <div v-if="deploymentPlansForDisplay.length > 0" class="plans-list">
                     <div
                       v-for="plan in deploymentPlansForDisplay"
@@ -242,7 +250,7 @@
                       <div class="plan-content">
                         <div class="plan-info">
                           <div class="plan-header">
-                            <span class="plan-version">{{ plan.version }}</span>
+                            <span class="plan-version">{{ plan.displayVersion || plan.version }}</span>
                           </div>
                           <div class="plan-details">
                             <div>{{ plan.time }}</div>
@@ -294,7 +302,7 @@
     >
       <div class="metrics-dialog-content">
         <div class="metrics-header">
-          <h3>{{ selectedNode?.name }} 服务指标详情</h3>
+          <h3>{{ selectedNode?.displayName || selectedNode?.name }} 服务指标详情</h3>
           <p class="metrics-subtitle">四大黄金指标监控</p>
         </div>
         
@@ -370,12 +378,12 @@
       <div class="edit-deployment-form">
         <div class="form-item">
           <label class="form-label">服务名称</label>
-          <div class="form-value">{{ editingDeployment?.service || selectedNode?.name || '未知服务' }}</div>
+          <div class="form-value">{{ formatServiceNameForDisplay(editingDeployment?.service || selectedNode?.name || '未知服务') }}</div>
         </div>
         
         <div class="form-item">
           <label class="form-label">版本号</label>
-          <div class="form-value">{{ editingDeployment?.version }}</div>
+          <div class="form-value">{{ formatVersionForDisplay(editingDeployment?.version || '') }}</div>
         </div>
         
         <div class="form-item">
@@ -464,8 +472,8 @@ const metricsData = ref<{
 const calculateAutoLayout = (services: any[]) => {
   // 布局配置
   const layoutConfig = {
-    levelHeight: 150,      // 层级间距
-    nodeSpacing: 200,      // 同层节点间距
+    levelHeight: 200,      // 层级间距（垂直方向）
+    nodeSpacing: 260,      // 同层节点间距（水平方向）
     startX: 400,           // 起始X坐标
     startY: 100,           // 起始Y坐标
     maxNodesPerLevel: 6    // 每层最大节点数
@@ -548,6 +556,31 @@ const calculateAutoLayout = (services: any[]) => {
   return positions
 }
 
+// 工具函数：格式化服务名显示（去掉 -service 后缀）
+const formatServiceNameForDisplay = (serviceName: string): string => {
+  if (serviceName.endsWith('-service')) {
+    return serviceName.slice(0, -8) // 去掉 '-service' (8个字符)
+  }
+  return serviceName
+}
+
+// 工具函数：将服务名按 - 分割成多行（用于节点显示）
+const formatServiceNameToLines = (serviceName: string): string[] => {
+  const displayName = formatServiceNameForDisplay(serviceName)
+  return displayName.split('-').filter(part => part.length > 0)
+}
+
+// 工具函数：格式化版本号显示（添加 v 前缀）
+const formatVersionForDisplay = (version: string): string => {
+  if (!version) return version
+  // 如果已经有 v 前缀，直接返回
+  if (version.startsWith('v') || version.startsWith('V')) {
+    return version
+  }
+  // 否则添加 v 前缀
+  return 'v' + version
+}
+
 // 数据转换函数
 const transformServiceData = (data: ServicesResponse) => {
   const nodes: any[] = []
@@ -561,8 +594,10 @@ const transformServiceData = (data: ServicesResponse) => {
     const position = positions.get(service.name) || { x: 400, y: 100 }
     
     const node = {
-      id: service.name,
-      name: service.name,
+      id: service.name,                                      // 保留原始服务名用于API调用
+      name: service.name,                                    // 保留原始服务名用于逻辑处理
+      displayName: formatServiceNameForDisplay(service.name), // 显示用的格式化名称
+      displayLines: formatServiceNameToLines(service.name),   // 节点显示用的多行文本
       x: position.x,
       y: position.y,
       health: service.health,
@@ -679,7 +714,8 @@ const transformActiveVersionsToFrontend = (activeVersionsResponse: ServiceActive
     const versionObserving = versionStatus === 'processing'
 
     return {
-      label: item.version,
+      label: item.version,                                // 原始版本号（用于API调用）
+      displayLabel: formatVersionForDisplay(item.version), // 显示版本号（带v前缀）
       value: percentage,
       eta: eta,
       anomalous: versionAnomalous || isAnomalous,
@@ -819,8 +855,8 @@ const availableVersionOptions = computed(() => {
   }
   
   return currentServiceAvailableVersions.value.items.map(item => ({
-    label: `${item.version} (${new Date(item.createTime).toLocaleDateString('zh-CN')})`,
-    value: item.version
+    label: `${formatVersionForDisplay(item.version)} (${new Date(item.createTime).toLocaleDateString('zh-CN')})`,
+    value: item.version  // 保留原始版本号（不带v），用于API调用
   }))
 })
 
@@ -877,7 +913,8 @@ const deploymentPlansForDisplay = computed(() => {
     return {
       id: plan.id,
       service: plan.service, // 保留服务名称字段
-      version: plan.version,
+      version: plan.version, // 原始版本号（用于API调用）
+      displayVersion: formatVersionForDisplay(plan.version), // 显示版本号（带v）
       status: statusMap[plan.status] || plan.status,
       time: generateTimeDisplay(),
       originalStatus: plan.status,
@@ -1048,7 +1085,8 @@ const transformMetricsToTableData = (versions: any[], metricsResponse: ServiceMe
       const saturation = versionMetrics.metrics.find(m => m.name === 'saturation')?.value || 0
       
       return {
-        version: v.label,
+        version: v.displayLabel || v.label,              // 显示带v的版本号
+        originalVersion: v.label,                        // 保留原始版本号
         latency: latency,
         traffic: traffic,
         errors: errorRatio.toFixed(1),
@@ -1063,7 +1101,8 @@ const transformMetricsToTableData = (versions: any[], metricsResponse: ServiceMe
       const saturation = metricsResponse.summary.metrics.find(m => m.name === 'saturation')?.value || 0
       
       return {
-        version: v.label,
+        version: v.displayLabel || v.label,              // 显示带v的版本号
+        originalVersion: v.label,                        // 保留原始版本号
         latency: latency,
         traffic: traffic,
         errors: errorRatio.toFixed(1),
@@ -1079,15 +1118,16 @@ const getVersionTableData = (versions: any[]) => {
   
   // 为每个版本添加部署状态信息（用于操作按钮）
   return tableData.map(version => {
-    // 检查是否有正在进行的部署
+    // 检查是否有正在进行的部署 - 使用原始版本号比较
+    const originalVersion = version.originalVersion || version.version
     const activeDeployment = currentServiceDeploymentPlans.value?.items?.find((plan: any) => 
-      plan.version === version.version && plan.status === 'InDeployment'
+      plan.version === originalVersion && plan.status === 'InDeployment'
     )
     
     return {
       ...version,
       isPaused: activeDeployment?.isPaused || false,
-      deployId: activeDeployment?.id || version.version // 如果没有deployId，使用version作为标识
+      deployId: activeDeployment?.id || originalVersion // 使用原始版本号作为标识
     }
   })
 }
@@ -1512,7 +1552,8 @@ const initPieChart = () => {
           }
           
           return {
-            name: v.label,
+            name: v.displayLabel || v.label,  // 显示时使用带v的版本号
+            originalVersion: v.label,          // 保留原始版本号用于API调用
             value: v.value,
             ...v,
             itemStyle: {
@@ -1540,8 +1581,9 @@ const initPieChart = () => {
           label: params.data.name
         }
         
-        // 异步加载指标数据
-        loadServiceMetricsData(selectedNode.value.name, params.data.name).then(metricsDataResult => {
+        // 异步加载指标数据 - 使用原始版本号（不带v）
+        const originalVersion = params.data.originalVersion || params.data.label
+        loadServiceMetricsData(selectedNode.value.name, originalVersion).then(metricsDataResult => {
           if (metricsDataResult) {
             metricsData.value = metricsDataResult
             // 数据加载完成后，重新初始化图表
@@ -1783,33 +1825,43 @@ const disposeMetricsCharts = () => {
 
 .node-circle {
   position: relative;
-  width: 64px;
-  height: 64px;
+  width: 96px;
+  height: 96px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  border: 3px solid rgba(255, 255, 255, 0.2);
 }
 
-.node-name {
+.node-name-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.node-name-line {
   color: white;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   user-select: none;
+  line-height: 1.2;
+  text-align: center;
 }
 
 .rolling-indicator {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  width: 24px;
-  height: 24px;
+  top: -6px;
+  right: -6px;
+  width: 36px;
+  height: 36px;
   background: white;
-  border: 1px solid #e2e8f0;
+  border: 2px solid #e2e8f0;
   border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .rolling-indicator svg {
