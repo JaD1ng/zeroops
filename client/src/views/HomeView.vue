@@ -814,7 +814,7 @@ const edges = ref<any[]>([])
 
 // 计算属性：将可发布版本数据转换为下拉框格式
 const availableVersionOptions = computed(() => {
-  if (!currentServiceAvailableVersions.value) {
+  if (!currentServiceAvailableVersions.value || !currentServiceAvailableVersions.value.items) {
     return []
   }
   
@@ -826,7 +826,7 @@ const availableVersionOptions = computed(() => {
 
 // 计算属性：将发布计划数据转换为前端显示格式
 const deploymentPlansForDisplay = computed(() => {
-  if (!currentServiceDeploymentPlans.value) {
+  if (!currentServiceDeploymentPlans.value || !currentServiceDeploymentPlans.value.items) {
     return []
   }
   
