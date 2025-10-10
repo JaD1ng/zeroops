@@ -72,7 +72,8 @@ func (c *Cache) TryMarkIdempotent(ctx context.Context, a AMAlert) (bool, error) 
 	if c == nil || c.R == nil {
 		return true, nil
 	}
-	k := "alert:idemp:" + a.Fingerprint + "|" + a.StartsAt.UTC().Format(time.RFC3339Nano)
+	key := BuildIdempotencyKey(a)
+	k := "alert:idemp:" + key
 	ok, err := c.R.SetNX(ctx, k, "1", 10*time.Minute).Result()
 	if err != nil {
 		// Best-effort: treat Redis errors as non-blocking and allow processing
