@@ -168,11 +168,24 @@ const transformDeploymentChangelogToChangeItems = (changelogData: any[]): Change
 // 数据转换函数：将告警规则变更记录API返回的数据转换为前端需要的格式
 const transformAlertRuleChangelogToAlarmChangeItems = (changelogData: AlertRuleChangeItem[]): AlarmChangeItem[] => {
   return changelogData.map((item, index) => {
-    // 从scope中提取服务名
-    const serviceName = item.scope?.startsWith('service:') ? item.scope.slice('service:'.length) + '服务' : '全局服务'
+    // 从scope中提取服务名和版本号
+    let serviceName = '全局'
+    if (item.scope?.startsWith('service:')) {
+      const scopeValue = item.scope.slice('service:'.length) // 例如："metadata-servicev1.0.0"
+      
+      // 分离服务名和版本号（版本号通常以 v 开头后跟数字）
+      const versionMatch = scopeValue.match(/v\d+\.\d+\.\d+$/)
+      if (versionMatch) {
+        const version = versionMatch[0]  // 例如："v1.0.0"
+        const service = scopeValue.slice(0, -version.length)  // 去掉版本号部分
+        serviceName = `${service} ${version}`  // 添加空格分隔，不带"服务"
+      } else {
+        serviceName = scopeValue  // 不带"服务"
+      }
+    }
     
     // 构建变更描述
-  const changeDescription = item.values.map((value) => {
+    const changeDescription = item.values.map((value) => {
       return `${value.name}: ${value.old} -> ${value.new}`
     }).join(', ')
     
