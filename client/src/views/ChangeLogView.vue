@@ -68,14 +68,6 @@
           </template>
         </div>
       </el-tab-pane>
-
-      <el-tab-pane label="xxx 变更记录" name="other1">
-        <div class="placeholder">占位</div>
-      </el-tab-pane>
-
-      <el-tab-pane label="xxx 变更记录" name="other2">
-        <div class="placeholder">占位</div>
-      </el-tab-pane>
     </el-tabs>
   </div>
 </template>

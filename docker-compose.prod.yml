@@ -56,6 +56,7 @@ services:
     volumes:
       - ./configs:/app/configs:ro
       - ./config.docker.json:/app/config.json:ro
+      - ./internal/deploy/config.yaml:/app/internal/deploy/config.yaml:ro
     ports:
       - "8080:8080"
     healthcheck:

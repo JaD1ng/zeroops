@@ -357,7 +357,7 @@ func runPrometheusAnomalyDetection(ctx context.Context, deps PrometheusDeps) err
 			log.Debug().Str("alert_name", q.AlertName).Str("service", service).Str("version", version).Msg("no exact meta threshold found; skip")
 			continue
 		}
-		newThreshold := baseTh * 0.99
+		newThreshold := baseTh - math.Ceil(baseTh*0.01)
 
 		// fetch all metas for this service (across versions)
 		metas, ferr := fetchMetasForService(ctx, deps.DB, q.AlertName, service)

@@ -157,7 +157,7 @@ erDiagram
         timestamp report_at
         timestamp resolved_at
         varchar health_state
-        varchar correlation_id
+        varchar alert_issue_ids
     }
 
     alert_issues {
