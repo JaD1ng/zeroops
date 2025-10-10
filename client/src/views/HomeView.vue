@@ -1235,15 +1235,18 @@ const cancelEdit = () => {
 
 const confirmCancel = async (plan: any) => {
   try {
-    // 调用取消部署计划API - 使用Mock API
-    const result = await mockApi.cancelDeployment(plan.id)
+    // 调用后端API取消部署计划
+    const response = await apiService.cancelDeployment(plan.id)
     
-    if (result.status === 200) {
-      ElMessage.success('发布计划已取消')
-      // 刷新发布计划列表
-      await loadServiceDeploymentPlans(selectedNode.value?.name || '')
-    } else {
-      ElMessage.error('取消发布计划失败')
+    console.log('取消部署计划成功:', response.data)
+    ElMessage.success('发布计划已取消')
+    
+    // 刷新发布计划列表
+    if (selectedNode.value) {
+      const deploymentPlansDataResult = await loadServiceDeploymentPlans(selectedNode.value.name)
+      if (deploymentPlansDataResult) {
+        currentServiceDeploymentPlans.value = deploymentPlansDataResult
+      }
     }
   } catch (error) {
     console.error('取消发布计划失败:', error)
@@ -1256,57 +1259,51 @@ const togglePauseResume = async (plan: any) => {
   try {
     const action = plan.isPaused ? '继续' : '暂停'
     
-    // 先更新前端状态
-    if (currentServiceDeploymentPlans.value) {
-      const targetPlan = currentServiceDeploymentPlans.value.items.find(p => p.id === plan.id)
-      if (targetPlan) {
-        targetPlan.isPaused = !targetPlan.isPaused
-      }
+    // 根据当前状态调用不同的后端API
+    if (plan.isPaused) {
+      const response = await apiService.continueDeployment(plan.id)
+      console.log('继续部署计划成功:', response.data)
+    } else {
+      const response = await apiService.pauseDeployment(plan.id)
+      console.log('暂停部署计划成功:', response.data)
     }
     
-    // 根据当前状态调用不同的API - 使用Mock API
-    const result = plan.isPaused 
-      ? await mockApi.continueDeployment(plan.id)  // 继续
-      : await mockApi.pauseDeployment(plan.id)     // 暂停
+    ElMessage.success(`发布计划已${action}`)
     
-    if (result.status === 200) {
-      ElMessage.success(`发布计划已${action}`)
-      // 不需要刷新列表，状态已经更新
-    } else {
-      ElMessage.error(`${action}发布计划失败`)
-      // 如果API调用失败，回滚前端状态
-      if (currentServiceDeploymentPlans.value) {
-        const targetPlan = currentServiceDeploymentPlans.value.items.find(p => p.id === plan.id)
-        if (targetPlan) {
-          targetPlan.isPaused = !targetPlan.isPaused
-        }
+    // 刷新发布计划列表以更新UI
+    if (selectedNode.value) {
+      const deploymentPlansDataResult = await loadServiceDeploymentPlans(selectedNode.value.name)
+      if (deploymentPlansDataResult) {
+        currentServiceDeploymentPlans.value = deploymentPlansDataResult
       }
     }
   } catch (error) {
     console.error('暂停/继续发布计划失败:', error)
     ElMessage.error('暂停/继续发布计划失败')
-    // 如果API调用失败，回滚前端状态
-    if (currentServiceDeploymentPlans.value) {
-      const targetPlan = currentServiceDeploymentPlans.value.items.find(p => p.id === plan.id)
-      if (targetPlan) {
-        targetPlan.isPaused = !targetPlan.isPaused
-      }
-    }
   }
 }
 
 // 回滚发布
 const rollbackRelease = async (plan: any) => {
   try {
-    // 调用回滚部署计划API - 使用Mock API
-    const result = await mockApi.rollbackDeployment(plan.id)
+    // 调用后端API回滚部署计划
+    const response = await apiService.rollbackDeployment(plan.id)
     
-    if (result.status === 200) {
-      ElMessage.success('发布计划已回滚')
-      // 刷新发布计划列表
-      await loadServiceDeploymentPlans(selectedNode.value?.name || '')
-    } else {
-      ElMessage.error('回滚发布计划失败')
+    console.log('回滚发布计划成功:', response.data)
+    ElMessage.success('发布计划已回滚')
+    
+    // 刷新发布计划列表和服务详情
+    if (selectedNode.value) {
+      const deploymentPlansDataResult = await loadServiceDeploymentPlans(selectedNode.value.name)
+      if (deploymentPlansDataResult) {
+        currentServiceDeploymentPlans.value = deploymentPlansDataResult
+      }
+      
+      // 刷新服务详情数据（饼图会自动更新）
+      const serviceDetailResult = await loadServiceDetail(selectedNode.value.name)
+      if (serviceDetailResult) {
+        selectedNode.value = { ...serviceDetailResult, status: getNodeStatus(serviceDetailResult) }
+      }
     }
   } catch (error) {
     console.error('回滚发布计划失败:', error)
@@ -1318,19 +1315,29 @@ const rollbackRelease = async (plan: any) => {
 const togglePauseResumeForVersion = async (version: any) => {
   try {
     if (version.isPaused) {
-      await mockApi.continueDeployment(version.deployId)
+      // 调用后端API继续部署
+      const response = await apiService.continueDeployment(version.deployId)
+      console.log('继续部署成功:', response.data)
       ElMessage.success('继续部署成功')
-      // 更新本地状态
-      version.isPaused = false
     } else {
-      await mockApi.pauseDeployment(version.deployId)
+      // 调用后端API暂停部署
+      const response = await apiService.pauseDeployment(version.deployId)
+      console.log('暂停部署成功:', response.data)
       ElMessage.success('暂停部署成功')
-      // 更新本地状态
-      version.isPaused = true
     }
-    // 刷新服务详情数据
+    
+    // 重新加载服务详情数据以更新UI
     if (selectedNode.value) {
-      await loadServiceDetail(selectedNode.value.name)
+      const serviceDetailResult = await loadServiceDetail(selectedNode.value.name)
+      if (serviceDetailResult) {
+        selectedNode.value = { ...serviceDetailResult, status: getNodeStatus(serviceDetailResult) }
+      }
+      
+      // 重新加载发布计划列表
+      const deploymentPlansDataResult = await loadServiceDeploymentPlans(selectedNode.value.name)
+      if (deploymentPlansDataResult) {
+        currentServiceDeploymentPlans.value = deploymentPlansDataResult
+      }
     }
   } catch (error) {
     console.error('操作失败:', error)
