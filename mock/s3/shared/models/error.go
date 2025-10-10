@@ -6,13 +6,13 @@ import (
 
 // MetricAnomalyRule 指标异常注入规则
 type MetricAnomalyRule struct {
-    ID          string `json:"id"`
-    Name        string `json:"name"`
-    Service     string `json:"service"`     // 目标服务
-    Instance    string `json:"instance,omitempty"` // 目标实例，可选
-    MetricName  string `json:"metric_name"` // 目标指标名称
-    AnomalyType string `json:"anomaly_type"`
-    Enabled     bool   `json:"enabled"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Service     string `json:"service"`            // 目标服务
+	Instance    string `json:"instance,omitempty"` // 目标实例，可选
+	MetricName  string `json:"metric_name"`        // 目标指标名称
+	AnomalyType string `json:"anomaly_type"`
+	Enabled     bool   `json:"enabled"`
 
 	// 异常参数
 	TargetValue float64       `json:"target_value"` // 目标异常值

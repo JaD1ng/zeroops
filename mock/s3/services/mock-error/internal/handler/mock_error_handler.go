@@ -85,13 +85,13 @@ func (h *MockErrorHandler) deleteMetricAnomaly(c *gin.Context) {
 
 // checkMetricInjection 检查是否应该注入指标异常
 func (h *MockErrorHandler) checkMetricInjection(c *gin.Context) {
-    ctx := c.Request.Context()
+	ctx := c.Request.Context()
 
-    var request struct {
-        Service    string `json:"service" binding:"required"`
-        MetricName string `json:"metric_name" binding:"required"`
-        Instance   string `json:"instance"`
-    }
+	var request struct {
+		Service    string `json:"service" binding:"required"`
+		MetricName string `json:"metric_name" binding:"required"`
+		Instance   string `json:"instance"`
+	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
 		h.logger.Error(ctx, "Failed to bind metric injection check request", observability.Error(err))
@@ -99,14 +99,14 @@ func (h *MockErrorHandler) checkMetricInjection(c *gin.Context) {
 		return
 	}
 
-    anomaly, shouldInject := h.errorService.ShouldInjectError(ctx, request.Service, request.MetricName, request.Instance)
+	anomaly, shouldInject := h.errorService.ShouldInjectError(ctx, request.Service, request.MetricName, request.Instance)
 
-    response := gin.H{
-        "should_inject": shouldInject,
-        "service":       request.Service,
-        "metric_name":   request.MetricName,
-        "instance":      request.Instance,
-    }
+	response := gin.H{
+		"should_inject": shouldInject,
+		"service":       request.Service,
+		"metric_name":   request.MetricName,
+		"instance":      request.Instance,
+	}
 
 	if shouldInject {
 		response["anomaly"] = anomaly

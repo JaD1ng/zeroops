@@ -1,0 +1,27 @@
+# Prometheus Adapter 配置文件
+
+# Prometheus 服务配置
+prometheus:
+  # Prometheus 服务地址
+  address: "http://10.210.10.33:9090"
+  # 容器名称（用于规则同步）
+  container_name: "mock-s3-prometheus"
+
+# 告警 Webhook 服务配置
+alert_webhook:
+  # 监控告警模块地址
+  url: "http://10.210.10.33:8080/v1/integrations/alertmanager/webhook"
+  # 轮询间隔
+  polling_interval: "10s"
+
+# 告警规则管理配置
+alert_rules:
+  # 本地规则文件路径
+  local_file: "../rules/alert_rules.yml"
+  # Prometheus 规则目录
+  prometheus_rules_dir: "/etc/prometheus/rules/"
+
+# 服务器配置
+server:
+  # 服务监听地址
+  bind_addr: "0.0.0.0:9999"

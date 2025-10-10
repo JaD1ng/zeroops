@@ -7,7 +7,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// ===== 服务管理业务方法 =====
+// ===== 服务信息查询方法 =====
 
 // GetServicesResponse 获取服务列表响应
 func (s *Service) GetServicesResponse(ctx context.Context) (*model.ServicesResponse, error) {
@@ -115,21 +115,6 @@ func (s *Service) GetServiceAvailableVersions(ctx context.Context, serviceName, 
 	return versions, nil
 }
 
-// CreateService 创建服务
-func (s *Service) CreateService(ctx context.Context, service *model.Service) error {
-	return s.db.CreateService(ctx, service)
-}
-
-// UpdateService 更新服务信息
-func (s *Service) UpdateService(ctx context.Context, service *model.Service) error {
-	return s.db.UpdateService(ctx, service)
-}
-
-// DeleteService 删除服务
-func (s *Service) DeleteService(ctx context.Context, name string) error {
-	return s.db.DeleteService(ctx, name)
-}
-
 // GetServiceMetricTimeSeries 获取服务时序指标数据
 func (s *Service) GetServiceMetricTimeSeries(ctx context.Context, serviceName, metricName string, query *model.MetricTimeSeriesQuery) (*model.PrometheusQueryRangeResponse, error) {
 	// TODO:这里应该调用实际的Prometheus或其他监控系统API
@@ -171,4 +156,21 @@ func (s *Service) GetServiceMetricTimeSeries(ctx context.Context, serviceName, m
 	}
 
 	return response, nil
+}
+
+// ===== 服务管理CRUD方法 =====
+
+// CreateService 创建服务
+func (s *Service) CreateService(ctx context.Context, service *model.Service) error {
+	return s.db.CreateService(ctx, service)
+}
+
+// UpdateService 更新服务信息
+func (s *Service) UpdateService(ctx context.Context, service *model.Service) error {
+	return s.db.UpdateService(ctx, service)
+}
+
+// DeleteService 删除服务
+func (s *Service) DeleteService(ctx context.Context, name string) error {
+	return s.db.DeleteService(ctx, name)
 }

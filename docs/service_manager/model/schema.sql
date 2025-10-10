@@ -44,17 +44,21 @@ CREATE TABLE IF NOT EXISTS service_states (
 
 -- 部署任务表 (deploy_tasks)
 CREATE TABLE IF NOT EXISTS deploy_tasks (
-    id VARCHAR(32) PRIMARY KEY,
+    service VARCHAR(255),
+    version VARCHAR(255),
     start_time TIMESTAMP,
     end_time TIMESTAMP,
     target_ratio DOUBLE PRECISION,
     instances JSONB DEFAULT '[]'::jsonb,
-    deploy_state VARCHAR(50)
+    deploy_state VARCHAR(50),
+    PRIMARY KEY (service, version),
+    FOREIGN KEY (service) REFERENCES services(name) ON DELETE CASCADE
 );
 
 -- 创建索引以提高查询性能
 CREATE INDEX IF NOT EXISTS idx_service_states_service ON service_states(service);
 CREATE INDEX IF NOT EXISTS idx_service_states_report_at ON service_states(service, report_at DESC);
+CREATE INDEX IF NOT EXISTS idx_deploy_tasks_service ON deploy_tasks(service);
 CREATE INDEX IF NOT EXISTS idx_deploy_tasks_state ON deploy_tasks(deploy_state);
 CREATE INDEX IF NOT EXISTS idx_service_instances_service ON service_instances(service);
 

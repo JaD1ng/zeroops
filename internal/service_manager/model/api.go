@@ -60,7 +60,6 @@ type MetricTimeSeriesQuery struct {
 
 // Deployment API响应用的发布任务
 type Deployment struct {
-	ID           string      `json:"id"`
 	Service      string      `json:"service"`
 	Version      string      `json:"version"`
 	Status       DeployState `json:"status"`
@@ -70,15 +69,23 @@ type Deployment struct {
 
 // CreateDeploymentRequest 创建发布任务请求
 type CreateDeploymentRequest struct {
-	Service      string     `json:"service" binding:"required"`
-	Version      string     `json:"version" binding:"required"`
-	ScheduleTime *time.Time `json:"scheduleTime,omitempty"` // 可选参数，不填为立即发布
+	Service       string     `json:"service" binding:"required"`
+	Version       string     `json:"version" binding:"required"`
+	ScheduleTime  *time.Time `json:"scheduleTime,omitempty"`  // 可选参数，不填为立即发布
+	InstanceCount int        `json:"instanceCount,omitempty"` // 可选参数，新服务部署时的实例数量
+	PackageURL    string     `json:"packageUrl,omitempty"`    // 可选参数，包下载URL，不填则自动构建
 }
 
 // UpdateDeploymentRequest 修改发布任务请求
 type UpdateDeploymentRequest struct {
 	Version      string     `json:"version,omitempty"`
 	ScheduleTime *time.Time `json:"scheduleTime,omitempty"` // 新的计划发布时间
+}
+
+// RollbackDeploymentRequest 回滚发布任务请求
+type RollbackDeploymentRequest struct {
+	TargetVersion string `json:"targetVersion" binding:"required"` // 回滚目标版本
+	PackageURL    string `json:"packageUrl,omitempty"`             // 可选参数，回滚包URL，不填则自动构建
 }
 
 // DeploymentQuery 发布任务查询参数
