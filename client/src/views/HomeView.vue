@@ -410,7 +410,7 @@ import * as echarts from 'echarts'
 import { apiService } from '@/api'
 import { mockApi } from '@/mock/api'
 import type { ServicesResponse, ServiceDetail, ServiceActiveVersionsResponse, ServiceMetricsResponse, AvailableVersionsResponse, DeploymentPlansResponse, MetricsResponse } from '@/mock/services'
-import { createReleaseTask, rollbackVersion as rollbackVersionInMock, updateServiceAlertStatus, getServiceAlertStatus, type ServiceAlertStatus, getServiceDeploymentStatus, type DeploymentStatus, getServiceVersionAlertStatus } from '@/mock/services'
+import { updateServiceAlertStatus, getServiceAlertStatus, type ServiceAlertStatus, getServiceDeploymentStatus, type DeploymentStatus, getServiceVersionAlertStatus } from '@/mock/services'
 
 const router = useRouter()
 
@@ -1135,72 +1135,40 @@ const createRelease = async () => {
   }
   
   try {
-    // 1. 调用mock数据操作函数，修改底层数据
-    createReleaseTask(selectedNode.value.name, selectedVersion.value)
+    // 调用后端API创建部署计划
+    const response = await apiService.createDeployment({
+      service: selectedNode.value.name,
+      version: selectedVersion.value,
+      scheduleTime: scheduledStart.value || undefined
+    })
     
-    // 2. 重新加载服务详情数据（这样饼状图会自动更新）
+    console.log('部署计划创建成功:', response.data)
+    
+    // 重新加载服务详情数据（饼状图会自动更新）
     const serviceDetailResult = await loadServiceDetail(selectedNode.value.name)
-    console.log('重新加载的服务详情数据:', serviceDetailResult)
     if (serviceDetailResult) {
       selectedNode.value = { ...serviceDetailResult, status: getNodeStatus(serviceDetailResult) }
-      console.log('更新后的selectedNode.value:', selectedNode.value)
     }
     
-    // 3. 重新加载可发布版本数据（这样下拉框会自动更新）
+    // 重新加载可发布版本数据（下拉框会自动更新）
     const availableVersionsResult = await loadServiceAvailableVersions(selectedNode.value.name)
     if (availableVersionsResult) {
       currentServiceAvailableVersions.value = availableVersionsResult
     }
     
-    // 4. 生成合理的黄金指标数值并更新表格
-    const generateMetrics = () => {
-      return {
-        latency: (Math.random() * 50 + 10).toFixed(1), // 10-60ms
-        traffic: (Math.random() * 1000 + 100).toFixed(0), // 100-1100 req/s
-        errorRatio: (Math.random() * 2).toFixed(1), // 0-2%
-        saturation: (Math.random() * 20 + 60).toFixed(0) // 60-80%
-      }
+    // 重新加载服务指标数据
+    const metricsDataResult = await loadServiceMetrics(selectedNode.value.name)
+    if (metricsDataResult) {
+      currentServiceMetrics.value = metricsDataResult
     }
     
-    const newMetrics = generateMetrics()
-    
-    // 直接更新当前服务的指标数据
-    if (currentServiceMetrics.value) {
-      // 添加新版本的指标数据
-      const newVersionMetrics = {
-        version: selectedVersion.value,
-        metrics: [
-          { name: 'latency', value: parseFloat(newMetrics.latency) },
-          { name: 'traffic', value: parseFloat(newMetrics.traffic) },
-          { name: 'errorRatio', value: parseFloat(newMetrics.errorRatio) },
-          { name: 'saturation', value: parseFloat(newMetrics.saturation) }
-        ]
-      }
-      
-      // 检查是否已存在该版本，如果存在则更新，否则添加
-      const existingIndex = currentServiceMetrics.value.items.findIndex(item => item.version === selectedVersion.value)
-      if (existingIndex >= 0) {
-        currentServiceMetrics.value.items[existingIndex] = newVersionMetrics
-      } else {
-        currentServiceMetrics.value.items.push(newVersionMetrics)
-      }
-      
-      // 更新summary数据（使用所有版本的平均值）
-      const allVersions = currentServiceMetrics.value.items
-      const avgLatency = allVersions.reduce((sum, v) => sum + (v.metrics.find(m => m.name === 'latency')?.value || 0), 0) / allVersions.length
-      const avgTraffic = allVersions.reduce((sum, v) => sum + (v.metrics.find(m => m.name === 'traffic')?.value || 0), 0) / allVersions.length
-      const avgErrorRatio = allVersions.reduce((sum, v) => sum + (v.metrics.find(m => m.name === 'errorRatio')?.value || 0), 0) / allVersions.length
-      const avgSaturation = allVersions.reduce((sum, v) => sum + (v.metrics.find(m => m.name === 'saturation')?.value || 0), 0) / allVersions.length
-      
-      currentServiceMetrics.value.summary.metrics = [
-        { name: 'latency', value: avgLatency },
-        { name: 'traffic', value: avgTraffic },
-        { name: 'errorRatio', value: avgErrorRatio },
-        { name: 'saturation', value: avgSaturation }
-      ]
+    // 重新加载发布计划列表
+    const deploymentPlansDataResult = await loadServiceDeploymentPlans(selectedNode.value.name)
+    if (deploymentPlansDataResult) {
+      currentServiceDeploymentPlans.value = deploymentPlansDataResult
     }
     
-    // 5. 重新加载服务数据以更新拓扑图
+    // 重新加载服务数据以更新拓扑图
     await loadServicesData()
     
     ElMessage.success('发布任务创建成功')
@@ -1372,10 +1340,12 @@ const togglePauseResumeForVersion = async (version: any) => {
 
 const rollbackVersion = async (version: any) => {
   try {
-    // 1. 调用mock数据操作函数，修改底层数据
-    rollbackVersionInMock(selectedNode.value?.name || '', version.version)
+    // 调用后端API执行回滚操作
+    const response = await apiService.rollbackDeployment(version.deployId)
     
-    // 2. 重新加载服务详情数据（这样饼状图会自动更新）
+    console.log('版本回滚成功:', response.data)
+    
+    // 重新加载服务详情数据（饼状图会自动更新）
     if (selectedNode.value) {
       const serviceDetailResult = await loadServiceDetail(selectedNode.value.name)
       if (serviceDetailResult) {
@@ -1383,7 +1353,7 @@ const rollbackVersion = async (version: any) => {
       }
     }
     
-    // 3. 重新加载可发布版本数据（这样下拉框会自动更新）
+    // 重新加载可发布版本数据（下拉框会自动更新）
     if (selectedNode.value) {
       const availableVersionsResult = await loadServiceAvailableVersions(selectedNode.value.name)
       if (availableVersionsResult) {
@@ -1391,39 +1361,15 @@ const rollbackVersion = async (version: any) => {
       }
     }
     
-    // 4. 从指标数据中移除该版本
-    if (currentServiceMetrics.value) {
-      const versionIndex = currentServiceMetrics.value.items.findIndex(item => item.version === version.version)
-      if (versionIndex >= 0) {
-        currentServiceMetrics.value.items.splice(versionIndex, 1)
-        
-        // 更新summary数据（使用剩余版本的平均值）
-        const remainingVersions = currentServiceMetrics.value.items
-        if (remainingVersions.length > 0) {
-          const avgLatency = remainingVersions.reduce((sum, v) => sum + (v.metrics.find(m => m.name === 'latency')?.value || 0), 0) / remainingVersions.length
-          const avgTraffic = remainingVersions.reduce((sum, v) => sum + (v.metrics.find(m => m.name === 'traffic')?.value || 0), 0) / remainingVersions.length
-          const avgErrorRatio = remainingVersions.reduce((sum, v) => sum + (v.metrics.find(m => m.name === 'errorRatio')?.value || 0), 0) / remainingVersions.length
-          const avgSaturation = remainingVersions.reduce((sum, v) => sum + (v.metrics.find(m => m.name === 'saturation')?.value || 0), 0) / remainingVersions.length
-          
-          currentServiceMetrics.value.summary.metrics = [
-            { name: 'latency', value: avgLatency },
-            { name: 'traffic', value: avgTraffic },
-            { name: 'errorRatio', value: avgErrorRatio },
-            { name: 'saturation', value: avgSaturation }
-          ]
-        } else {
-          // 如果没有剩余版本，清空summary数据
-          currentServiceMetrics.value.summary.metrics = [
-            { name: 'latency', value: 0 },
-            { name: 'traffic', value: 0 },
-            { name: 'errorRatio', value: 0 },
-            { name: 'saturation', value: 0 }
-          ]
-        }
+    // 重新加载服务指标数据
+    if (selectedNode.value) {
+      const metricsDataResult = await loadServiceMetrics(selectedNode.value.name)
+      if (metricsDataResult) {
+        currentServiceMetrics.value = metricsDataResult
       }
     }
     
-    // 5. 重新加载服务数据以更新拓扑图
+    // 重新加载服务数据以更新拓扑图
     await loadServicesData()
     
     ElMessage.success('版本回滚成功')
