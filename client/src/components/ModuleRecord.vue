@@ -168,6 +168,8 @@ const getStatusType = (status: string) => {
 .details {
   font-size: 14px;
   color: #374151;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .thoughts-section {
@@ -214,5 +216,8 @@ const getStatusType = (status: string) => {
   white-space: pre-wrap;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   overflow-x: auto;
+  max-height: 300px;
+  overflow-y: auto;
+  word-break: break-all;
 }
 </style>

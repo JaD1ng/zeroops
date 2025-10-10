@@ -61,10 +61,13 @@ const handleCardClick = () => {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: 16px;
 }
 
 .alarm-info {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .service-name {
@@ -77,6 +80,9 @@ const handleCardClick = () => {
   font-size: 14px;
   color: #374151;
   margin-bottom: 4px;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
 }
 
 .timestamp {
@@ -90,8 +96,8 @@ const handleCardClick = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-left: 16px;
   color: #6b7280;
+  flex-shrink: 0;
 }
 
 .expandable {
@@ -117,6 +123,10 @@ const handleCardClick = () => {
   border: 1px solid #e2e8f0;
   font-size: 14px;
   color: #4b5563;
-  line-height: 1.5;
+  line-height: 1.6;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-height: 400px;
+  overflow-y: auto;
 }
 </style>

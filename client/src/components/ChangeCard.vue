@@ -104,6 +104,8 @@ const getProgressColor = (state: string) => {
   align-items: center;
   gap: 8px;
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .status-dot {
@@ -116,12 +118,16 @@ const getProgressColor = (state: string) => {
 .service-name {
   font-weight: 600;
   font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .status-text {
   font-size: 14px;
   color: #6b7280;
   margin-left: 8px;
+  white-space: nowrap;
 }
 
 .expand-indicator {
@@ -131,6 +137,7 @@ const getProgressColor = (state: string) => {
   align-items: center;
   justify-content: center;
   color: #6b7280;
+  flex-shrink: 0;
 }
 
 .expandable {
