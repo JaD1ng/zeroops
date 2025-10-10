@@ -643,17 +643,64 @@ const generateVersionsFromDeployState = (service: any) => {
   }
 }
 
+// 解析告警列表，提取服务告警状态
+const parseAlertsToServiceStatus = (alertsData: any) => {
+  // 优先级：Pending > InProcessing > Restored > AutoRestored
+  const priority: Record<string, number> = {
+    Pending: 4,
+    InProcessing: 3,
+    Restored: 2,
+    AutoRestored: 1
+  }
+
+  // 服务名映射
+  const prophetToServiceMap: Record<string, string> = {
+    s3apiv2: 's3'
+  }
+
+  const latestStateByService = new Map<string, { state: string; ts: number; prio: number }>()
+
+  for (const issue of alertsData) {
+    // 解析服务名：优先 labels.service，其次 prophet_service 的映射
+    const serviceLabel = issue.labels.find((l: any) => l.key === 'service')?.value
+    const prophetService = issue.labels.find((l: any) => l.key === 'prophet_service')?.value
+    const mapped = prophetService ? prophetToServiceMap[prophetService] : undefined
+    const serviceName = serviceLabel || mapped
+    if (!serviceName) continue
+
+    const ts = new Date(issue.alertSince).getTime()
+    const prio = priority[issue.alertState] || 0
+    const existing = latestStateByService.get(serviceName)
+    if (!existing || prio > existing.prio || (prio === existing.prio && ts > existing.ts)) {
+      latestStateByService.set(serviceName, { state: issue.alertState, ts, prio })
+    }
+  }
+
+  // 更新到全局状态映射
+  latestStateByService.forEach((val, service) => {
+    updateServiceAlertStatus(service, val.state)
+  })
+}
+
 // API调用函数
 const loadServicesData = async () => {
   loading.value = true
   error.value = null
   
   try {
-    // 加载服务数据 - 调用真实后端API
-    const response = await apiService.getServices()
-    const servicesResponse = response.data
+    // 并行加载服务数据和告警数据
+    const [servicesRes, openAlertsRes, closedAlertsRes] = await Promise.all([
+      apiService.getServices(),
+      apiService.getAlerts(undefined, 100, 'Open'),
+      apiService.getAlerts(undefined, 100, 'Closed')
+    ])
     
+    const servicesResponse = servicesRes.data
     servicesData.value = servicesResponse
+    
+    // 解析告警状态并更新到内存
+    const allAlerts = [...openAlertsRes.data.items, ...closedAlertsRes.data.items]
+    parseAlertsToServiceStatus(allAlerts)
     
     // 转换数据
     try {

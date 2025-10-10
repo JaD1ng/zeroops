@@ -218,7 +218,6 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { apiService } from '@/api'
-import { updateServiceAlertStatus, updateServiceVersionAlertStatus } from '@/mock/services'
 import type { AlertsResponse, AlertIssue, AlertDetail } from '@/mock/services'
 import { marked } from 'marked'
 
@@ -397,8 +396,6 @@ const loadAlerts = async () => {
 
       alerts.value = merged.slice(0, 10)
       allAlerts.value = merged
-      // 同步拓扑服务状态
-      syncServiceAlertStatuses(allAlerts.value)
       console.log('告警数据加载成功: All', { total: merged.length })
     } else {
       const state = filterState.value === 'open' ? 'Open' : 'Closed'
@@ -415,8 +412,6 @@ const loadAlerts = async () => {
       const mergedAll = [...openResp.data.items, ...closedResp.data.items]
         .sort((a: any, b: any) => new Date(b.alertSince).getTime() - new Date(a.alertSince).getTime())
       allAlerts.value = mergedAll
-      // 同步拓扑服务状态
-      syncServiceAlertStatuses(allAlerts.value)
       console.log('告警数据加载成功:', { filter: state, count: alerts.value.length, total: mergedAll.length })
     }
   } catch (err) {
@@ -426,59 +421,6 @@ const loadAlerts = async () => {
   } finally {
     loading.value = false
   }
-}
-
-// 将告警状态同步到首页拓扑的服务节点颜色
-const syncServiceAlertStatuses = (issues: AlertIssue[]) => {
-  // 优先级：Pending > InProcessing > Restored > AutoRestored
-  const priority: Record<string, number> = {
-    Pending: 4,
-    InProcessing: 3,
-    Restored: 2,
-    AutoRestored: 1
-  }
-
-  // 可能需要从其他标签映射到首页的服务名
-  const prophetToServiceMap: Record<string, string> = {
-    s3apiv2: 's3'
-  }
-
-  const latestStateByService = new Map<string, { state: AlertIssue['alertState']; ts: number; prio: number }>()
-
-  for (const issue of issues) {
-    // 解析服务名：优先 labels.service，其次 prophet_service 的映射
-    const serviceLabel = issue.labels.find(l => l.key === 'service')?.value
-    const prophetService = issue.labels.find(l => l.key === 'prophet_service')?.value
-    const mapped = prophetService ? prophetToServiceMap[prophetService] : undefined
-    const serviceName = serviceLabel || mapped
-    if (!serviceName) continue
-
-    const ts = new Date(issue.alertSince).getTime()
-    const prio = priority[issue.alertState] || 0
-    const existing = latestStateByService.get(serviceName)
-    if (!existing || prio > existing.prio || (prio === existing.prio && ts > existing.ts)) {
-      latestStateByService.set(serviceName, { state: issue.alertState, ts, prio })
-    }
-
-    // 同步版本状态（如果存在 service_version 标签）
-    // 版本标签检测：兼容多种后端命名
-    const versionLabel =
-      issue.labels.find(l => l.key === 'service_version')?.value ||
-      issue.labels.find(l => l.key === 'version')?.value ||
-      issue.labels.find(l => l.key === 'serviceVersion')?.value ||
-      issue.labels.find(l => l.key === 'svc_version')?.value ||
-      issue.labels.find(l => l.key === 'deploy_version')?.value ||
-      issue.labels.find(l => l.key === 'deployVersion')?.value ||
-      issue.labels.find(l => l.key.toLowerCase().includes('version'))?.value
-    if (versionLabel) {
-      updateServiceVersionAlertStatus(serviceName, versionLabel, issue.alertState)
-    }
-  }
-
-  // 写入共享状态映射（持久化到 localStorage）
-  latestStateByService.forEach((val, service) => {
-    updateServiceAlertStatus(service, val.state)
-  })
 }
 
 // 生命周期

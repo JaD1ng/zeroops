@@ -1707,44 +1707,21 @@ export const mockAlertRuleChangelog: AlertRuleChangelogResponse = {
 // 使用 localStorage 实现前端数据持久化
 
 /**
- * 保存数据到 localStorage
+ * 保存数据到 localStorage（已禁用）
  */
 const saveDataToStorage = () => {
-  try {
-    localStorage.setItem('mockServiceActiveVersions', JSON.stringify(mockServiceActiveVersions))
-    localStorage.setItem('mockAvailableVersions', JSON.stringify(mockAvailableVersions))
-    console.log('数据已保存到 localStorage')
-  } catch (error) {
-    console.error('保存数据到 localStorage 失败:', error)
-  }
+  // 不再保存到 localStorage，所有数据从API获取
 }
 
 /**
- * 从 localStorage 加载数据
+ * 从 localStorage 加载数据（已禁用）
  */
 const loadDataFromStorage = () => {
-  try {
-    const activeVersionsData = localStorage.getItem('mockServiceActiveVersions')
-    const availableVersionsData = localStorage.getItem('mockAvailableVersions')
-    
-    if (activeVersionsData) {
-      const parsedData = JSON.parse(activeVersionsData)
-      Object.assign(mockServiceActiveVersions, parsedData)
-      console.log('已从 localStorage 加载活跃版本数据')
-    }
-    
-    if (availableVersionsData) {
-      const parsedData = JSON.parse(availableVersionsData)
-      Object.assign(mockAvailableVersions, parsedData)
-      console.log('已从 localStorage 加载可发布版本数据')
-    }
-  } catch (error) {
-    console.error('从 localStorage 加载数据失败:', error)
-  }
+  // 不再从 localStorage 加载，所有数据从API获取
 }
 
-// 页面加载时自动从 localStorage 恢复数据
-loadDataFromStorage()
+// 页面加载时不再从 localStorage 恢复数据（已禁用）
+// loadDataFromStorage()
 
 // ==================== 服务告警状态管理 ====================
 // 管理服务节点的告警状态，用于改变拓扑图中节点的颜色
@@ -1760,31 +1737,17 @@ export type ServiceAlertStatus = 'normal' | 'pending' | 'processing'
 export const serviceAlertStatusMap: Record<string, ServiceAlertStatus> = {}
 
 /**
- * 保存服务告警状态到 localStorage
+ * 保存服务告警状态（已禁用localStorage）
  */
 const saveServiceAlertStatus = () => {
-  try {
-    localStorage.setItem('serviceAlertStatusMap', JSON.stringify(serviceAlertStatusMap))
-    console.log('服务告警状态已保存到 localStorage')
-  } catch (error) {
-    console.error('保存服务告警状态失败:', error)
-  }
+  // 不再保存到 localStorage，只在内存中维护
 }
 
 /**
- * 从 localStorage 加载服务告警状态
+ * 从 localStorage 加载服务告警状态（已禁用）
  */
 const loadServiceAlertStatus = () => {
-  try {
-    const data = localStorage.getItem('serviceAlertStatusMap')
-    if (data) {
-      const parsedData = JSON.parse(data)
-      Object.assign(serviceAlertStatusMap, parsedData)
-      console.log('已从 localStorage 加载服务告警状态')
-    }
-  } catch (error) {
-    console.error('从 localStorage 加载服务告警状态失败:', error)
-  }
+  // 不再从 localStorage 加载，改为从API获取
 }
 
 /**
@@ -1834,8 +1797,8 @@ export const clearServiceAlertStatus = (serviceName: string) => {
   console.log(`已清除服务 ${serviceName} 的告警状态`)
 }
 
-// 页面加载时自动从 localStorage 恢复服务告警状态
-loadServiceAlertStatus()
+// 页面加载时不再从 localStorage 恢复服务告警状态（已禁用）
+// loadServiceAlertStatus()
 
 // ==================== 服务版本告警状态管理 ====================
 // 让首页服务详情中的各版本颜色与告警状态同步
@@ -1917,31 +1880,17 @@ export type DeploymentStatus = 'idle' | 'deploying'
 export const serviceDeploymentStatusMap: Record<string, DeploymentStatus> = {}
 
 /**
- * 保存服务发布状态到 localStorage
+ * 保存服务发布状态（已禁用localStorage）
  */
 const saveServiceDeploymentStatus = () => {
-  try {
-    localStorage.setItem('serviceDeploymentStatusMap', JSON.stringify(serviceDeploymentStatusMap))
-    console.log('服务发布状态已保存到 localStorage')
-  } catch (error) {
-    console.error('保存服务发布状态失败:', error)
-  }
+  // 不再保存到 localStorage，只在内存中维护
 }
 
 /**
- * 从 localStorage 加载服务发布状态
+ * 从 localStorage 加载服务发布状态（已禁用）
  */
 const loadServiceDeploymentStatus = () => {
-  try {
-    const data = localStorage.getItem('serviceDeploymentStatusMap')
-    if (data) {
-      const parsedData = JSON.parse(data)
-      Object.assign(serviceDeploymentStatusMap, parsedData)
-      console.log('已从 localStorage 加载服务发布状态')
-    }
-  } catch (error) {
-    console.error('从 localStorage 加载服务发布状态失败:', error)
-  }
+  // 不再从 localStorage 加载，改为从API获取
 }
 
 /**
@@ -1973,8 +1922,8 @@ export const clearServiceDeploymentStatus = (serviceName: string) => {
   console.log(`已清除服务 ${serviceName} 的发布状态`)
 }
 
-// 页面加载时自动从 localStorage 恢复服务发布状态
-loadServiceDeploymentStatus()
+// 页面加载时不再从 localStorage 恢复服务发布状态（已禁用）
+// loadServiceDeploymentStatus()
 
 // ==================== 数据操作函数 ====================
 // 这些函数模拟后端操作数据的过程，用于支持前端的发布和回滚功能
