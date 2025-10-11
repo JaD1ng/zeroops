@@ -315,6 +315,9 @@ __debug_bin
 CLAUDE.md
 .vercel
 
+# Ignore generated deployment packages
+internal/deploy/packages/
+
 
 *package-lock.json
 client/package-lock.json
