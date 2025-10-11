@@ -148,7 +148,7 @@ func (api *Api) GetServiceMetricTimeSeries(c *gin.Context) {
 }
 
 // GetServiceMetricStats 获取服务指标统计（GET /v1/metricStats/:service）
-func (api *Api) GetServiceMetricStats(c *fox.Context) {
+func (api *Api) GetServiceMetricStats(c *gin.Context) {
 	ctx := c.Request.Context()
 	serviceName := c.Param("service")
 
