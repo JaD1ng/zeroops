@@ -13,15 +13,15 @@ import (
 
 // DeployAdapter 部署适配器，处理 service_manager 和 deploy 模块间的参数转换
 type DeployAdapter struct {
-	instanceManager InstanceManager
+	instanceManager deployService.InstanceManager
 	baseURL         string // 包仓库基础URL
 }
 
 // NewDeployAdapter 创建部署适配器
-func NewDeployAdapter(instanceManager InstanceManager) *DeployAdapter {
+func NewDeployAdapter(instanceManager deployService.InstanceManager) *DeployAdapter {
 	return &DeployAdapter{
 		instanceManager: instanceManager,
-		baseURL:         "/Users/dingnanjia/workspace/mock/zeroops/internal/deploy/packages", // 本地包仓库路径
+		baseURL:         "/tmp/zeroops/packages", // 包仓库路径（10.210.10.33）
 	}
 }
 

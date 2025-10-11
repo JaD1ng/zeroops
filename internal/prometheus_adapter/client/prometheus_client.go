@@ -151,6 +151,16 @@ func BuildQuery(service, metric, version string) string {
 	return query
 }
 
+// QueryRangeRaw 执行范围查询并返回原始结果（用于需要完整 Prometheus 响应的场景）
+func (c *PrometheusClient) QueryRangeRaw(ctx context.Context, query string, start, end time.Time, step time.Duration) (promModel.Value, v1.Warnings, error) {
+	r := v1.Range{
+		Start: start,
+		End:   end,
+		Step:  step,
+	}
+	return c.api.QueryRange(ctx, query, r)
+}
+
 // GetAlerts 获取 Prometheus 当前的告警
 func (c *PrometheusClient) GetAlerts(ctx context.Context) (*model.PrometheusAlertsResponse, error) {
 	url := fmt.Sprintf("%s/api/v1/alerts", c.baseURL)

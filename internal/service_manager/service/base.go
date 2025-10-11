@@ -1,50 +1,40 @@
 package service
 
 import (
-	deployModel "github.com/qiniu/zeroops/internal/deploy/model"
 	deployService "github.com/qiniu/zeroops/internal/deploy/service"
+	promClient "github.com/qiniu/zeroops/internal/prometheus_adapter/client"
 	"github.com/qiniu/zeroops/internal/service_manager/database"
 	"github.com/rs/zerolog/log"
 )
 
 type Service struct {
-	db              *database.Database
-	deployService   deployService.DeployService
-	instanceManager InstanceManager
-	deployAdapter   *DeployAdapter
-}
-
-// InstanceManager 定义实例管理接口
-type InstanceManager interface {
-	GetServiceInstances(serviceName string, version ...string) ([]*deployModel.InstanceInfo, error)
-	GetInstanceVersionHistory(instanceID string) ([]*deployModel.VersionInfo, error)
+	db               *database.Database
+	deployService    deployService.DeployService
+	instanceManager  deployService.InstanceManager
+	deployAdapter    *DeployAdapter
+	prometheusClient *promClient.PrometheusClient
 }
 
 func NewService(db *database.Database) *Service {
-	instanceManager := &instanceManagerImpl{}
+	// 使用 deploy 模块提供的真实实例管理器实现
+	instanceManager := deployService.NewFloyInstanceService()
+
+	// 初始化 Prometheus 客户端
+	promClient, err := promClient.NewPrometheusClient("http://10.210.10.33:9090")
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to create Prometheus client, metrics will be unavailable")
+	}
+
 	service := &Service{
-		db:              db,
-		deployService:   deployService.NewDeployService(),
-		instanceManager: instanceManager,
-		deployAdapter:   NewDeployAdapter(instanceManager),
+		db:               db,
+		deployService:    deployService.NewDeployService(),
+		instanceManager:  instanceManager,
+		deployAdapter:    NewDeployAdapter(instanceManager),
+		prometheusClient: promClient,
 	}
 
 	log.Info().Msg("Service initialized successfully with deploy integration")
 	return service
-}
-
-// instanceManagerImpl 实现 InstanceManager 接口
-type instanceManagerImpl struct{}
-
-func (i *instanceManagerImpl) GetServiceInstances(serviceName string, version ...string) ([]*deployModel.InstanceInfo, error) {
-	// TODO: 实现获取服务实例的逻辑
-	// 暂时返回空列表，实际应该查询 deploy 模块的数据库
-	return []*deployModel.InstanceInfo{}, nil
-}
-
-func (i *instanceManagerImpl) GetInstanceVersionHistory(instanceID string) ([]*deployModel.VersionInfo, error) {
-	// TODO: 实现获取实例版本历史的逻辑
-	return nil, nil
 }
 
 func (s *Service) Close() error {

@@ -16,6 +16,7 @@ func (api *Api) setupInfoRouters(router *gin.Engine) {
 	router.GET("/v1/services/:service/activeVersions", api.GetServiceActiveVersions)
 	router.GET("/v1/services/:service/availableVersions", api.GetServiceAvailableVersions)
 	router.GET("/v1/metrics/:service/:name", api.GetServiceMetricTimeSeries)
+	router.GET("/v1/metricStats/:service", api.GetServiceMetricStats)
 
 	// 服务管理（CRUD）
 	router.POST("/v1/services", api.CreateService)
@@ -139,6 +140,34 @@ func (api *Api) GetServiceMetricTimeSeries(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, map[string]any{
 			"error":   "internal server error",
 			"message": "failed to get service metric time series",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// GetServiceMetricStats 获取服务指标统计（GET /v1/metricStats/:service）
+func (api *Api) GetServiceMetricStats(c *fox.Context) {
+	ctx := c.Request.Context()
+	serviceName := c.Param("service")
+
+	if serviceName == "" {
+		c.JSON(http.StatusBadRequest, map[string]any{
+			"error":   "bad request",
+			"message": "service name is required",
+		})
+		return
+	}
+
+	response, err := api.service.GetServiceMetricStats(ctx, serviceName)
+	if err != nil {
+		log.Error().Err(err).
+			Str("service", serviceName).
+			Msg("failed to get service metric stats")
+		c.JSON(http.StatusInternalServerError, map[string]any{
+			"error":   "internal server error",
+			"message": "failed to get service metric stats",
 		})
 		return
 	}

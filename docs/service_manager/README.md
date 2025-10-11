@@ -57,7 +57,8 @@ Service Manager 是 ZeroOps 平台的核心服务管理模块，负责微服务�
 | DELETE | `/v1/services/:service` | 删除服务 |
 | GET | `/v1/services/:service/activeVersions` | 获取服务详情 |
 | GET | `/v1/services/:service/availableVersions` | 获取可用服务版本 |
-| GET | `/v1/metrics/:service/:name` | 获取服务监控指标 |
+| GET | `/v1/metrics/:service/:name` | 获取服务监控指标（时序数据） |
+| GET | `/v1/metricStats/:service` | 获取服务指标统计（聚合数据） |
 
 ### 部署管理接口
 
@@ -65,12 +66,12 @@ Service Manager 是 ZeroOps 平台的核心服务管理模块，负责微服务�
 |------|------|------|
 | POST | `/v1/deployments` | 创建部署任务 |
 | GET | `/v1/deployments` | 获取部署任务列表 |
-| GET | `/v1/deployments/:deployID` | 获取部署任务详情 |
-| POST | `/v1/deployments/:deployID` | 更新部署任务 |
-| DELETE | `/v1/deployments/:deployID` | 删除部署任务 |
-| POST | `/v1/deployments/:deployID/pause` | 暂停部署 |
-| POST | `/v1/deployments/:deployID/continue` | 继续部署 |
-| POST | `/v1/deployments/:deployID/rollback` | 回滚部署 |
+| GET | `/v1/deployments/:service/:version` | 获取部署任务详情 |
+| POST | `/v1/deployments/:service/:version` | 更新部署任务 |
+| DELETE | `/v1/deployments/:service/:version` | 删除部署任务 |
+| POST | `/v1/deployments/:service/:version/pause` | 暂停部署 |
+| POST | `/v1/deployments/:service/:version/continue` | 继续部署 |
+| POST | `/v1/deployments/:service/:version/rollback` | 回滚部署 |
 
 ## 数据模型
 
@@ -159,6 +160,61 @@ curl http://localhost:8080/v1/services
   "relation": {
     "user-service": ["database-service"]
   }
+}
+```
+
+### 获取服务指标统计
+
+```bash
+curl http://localhost:8080/v1/metricStats/user-service
+```
+
+响应示例：
+```json
+{
+  "summary": {
+    "metrics": [
+      {
+        "name": "latency",
+        "value": 10
+      },
+      {
+        "name": "traffic",
+        "value": 1000
+      },
+      {
+        "name": "errorRatio",
+        "value": 10
+      },
+      {
+        "name": "saturation",
+        "value": 50
+      }
+    ]
+  },
+  "items": [
+    {
+      "version": "v1.0.1",
+      "metrics": [
+        {
+          "name": "latency",
+          "value": 10
+        },
+        {
+          "name": "traffic",
+          "value": 1000
+        },
+        {
+          "name": "errorRatio",
+          "value": 10
+        },
+        {
+          "name": "saturation",
+          "value": 50
+        }
+      ]
+    }
+  ]
 }
 ```
 

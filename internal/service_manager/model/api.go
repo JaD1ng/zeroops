@@ -95,3 +95,28 @@ type DeploymentQuery struct {
 	Start   string      `form:"start"`   // 分页起始
 	Limit   int         `form:"limit"`   // 分页大小
 }
+
+// ===== 指标统计结构体 =====
+
+// MetricItem 单个指标项
+type MetricItem struct {
+	Name  string  `json:"name"`  // 指标名称: latency/traffic/errorRatio/saturation
+	Value float64 `json:"value"` // 指标值
+}
+
+// MetricSummary 指标汇总（所有实例的聚合值）
+type MetricSummary struct {
+	Metrics []MetricItem `json:"metrics"` // 指标列表
+}
+
+// VersionMetricStats 版本指标统计
+type VersionMetricStats struct {
+	Version string       `json:"version"` // 版本号
+	Metrics []MetricItem `json:"metrics"` // 此版本的指标内容
+}
+
+// ServiceMetricStatsResponse 服务指标统计响应（对应 GET /v1/metricStats/:service）
+type ServiceMetricStatsResponse struct {
+	Summary MetricSummary        `json:"summary"` // 所有实例的聚合值
+	Items   []VersionMetricStats `json:"items"`   // 各版本的指标统计
+}
